@@ -1,0 +1,225 @@
+Research this topic for implementation: {{TOPIC}}
+
+{{DESCRIPTION}}
+
+## Research Methodology (CRITICAL)
+
+**Search for this information in a structured way. As you gather data, develop several competing hypotheses. Track your confidence levels in your progress notes to improve calibration. Regularly self-critique your approach and plan. Update a hypothesis tree or research notes file to persist information and provide transparency. Break down this complex research task systematically.**
+
+### Thinking Framework
+
+1. **Hypothesis-Driven Research**
+   - Form initial hypotheses about the solution
+   - Actively seek evidence that could DISPROVE each hypothesis
+   - Update confidence levels as you gather data (e.g., "70% confident → 85% after finding X")
+
+2. **Competing Approaches**
+   - Always identify at least 2-3 possible approaches
+   - Document trade-offs for each (pros/cons table)
+   - Justify why the chosen approach wins
+
+3. **Self-Critique Checkpoints**
+   - After each major finding, ask: "What am I missing?"
+   - Challenge assumptions: "Is this actually true, or am I assuming?"
+   - Consider edge cases: "What could break this?"
+
+4. **Transparency in Progress**
+   - Document what you searched and what you found
+   - Note dead ends (they're valuable context)
+   - Track confidence evolution throughout research
+
+## Research Process
+
+1. **Explore the codebase** - understand current architecture and patterns
+2. **Identify affected files/modules** - map the impact zone
+3. **Develop competing hypotheses** - don't settle on first solution
+4. **Evaluate trade-offs** - document why one approach beats others
+5. **Recommend with confidence level** - be honest about uncertainty
+
+## Output Requirements
+
+You MUST produce TWO outputs:
+
+### Output 1: Research File
+
+Create a detailed research file at `research/{{SLUG}}-{{DATE}}.md` with:
+
+```markdown
+# Research: [Topic Title]
+
+> **Started:** [timestamp]
+> **Updated:** [timestamp]
+> **Status:** [In Progress / Complete]
+> **Final Confidence:** [X]%
+
+## Research Question
+
+[Clear statement of what we're trying to solve]
+
+---
+
+## Executive Summary
+
+[2-3 sentences: problem, chosen solution, key insight]
+
+---
+
+## Hypothesis Evolution
+
+| # | Hypothesis | Initial Confidence | Final Confidence | Status |
+|---|------------|-------------------|------------------|--------|
+| 1 | [Hypothesis] | X% | Y% | Confirmed/Rejected/Modified |
+| 2 | [Hypothesis] | X% | Y% | Confirmed/Rejected/Modified |
+
+---
+
+## Current Architecture Analysis
+
+[What exists today, how it works, relevant code snippets]
+
+---
+
+## Approaches Considered
+
+### Approach A: [Name]
+**Pros:** ...
+**Cons:** ...
+**Verdict:** [Chosen/Rejected] because...
+
+### Approach B: [Name]
+**Pros:** ...
+**Cons:** ...
+**Verdict:** [Chosen/Rejected] because...
+
+---
+
+## Recommended Approach
+
+**Decision:** [One-line summary]
+
+**Rationale:**
+1. [Key reason]
+2. [Key reason]
+
+**Confidence:** X% (because [evidence])
+
+---
+
+## Implementation Checklist
+
+- [ ] Task 1
+- [ ] Task 2
+- [ ] Task 3
+
+---
+
+## Edge Cases & Risks
+
+- Risk 1: [description] → Mitigation: [approach]
+- Risk 2: [description] → Mitigation: [approach]
+
+---
+
+## Dead Ends & Rejected Paths
+
+[Document what you tried that didn't work - this is valuable context]
+
+---
+
+## Unresolved Questions
+
+1. [Question] - Impact: [High/Medium/Low]
+2. [Question] - Impact: [High/Medium/Low]
+
+---
+
+*Generated: [date]*
+```
+
+### Output 2: GitHub Issue Body
+
+After completing research, output the GitHub issue body between markers:
+
+```
+===ISSUE_BODY_START===
+## Overview
+
+[1-2 paragraph description of what this implements and why]
+
+> 📊 **Research file:** `research/{{SLUG}}-{{DATE}}.md`
+> 🎯 **Confidence:** [X]%
+> 📅 **Research date:** {{DATE}}
+
+---
+
+## Scope
+
+[What's included/excluded in this issue]
+
+---
+
+## Decision
+
+**Chosen approach:** [One-line summary]
+
+**Rationale:**
+- [Key reason 1]
+- [Key reason 2]
+
+**Alternatives considered:** [Brief mention of rejected approaches]
+
+---
+
+## Target Project Context
+
+**Tech Stack:** [Relevant technologies]
+
+**Relevant Files:**
+- `path/to/file1` - [purpose]
+- `path/to/file2` - [purpose]
+
+---
+
+## Implementation Checklist
+
+- [ ] Read research file `@research/{{SLUG}}-{{DATE}}.md` for full context
+- [ ] [Task 1]
+- [ ] [Task 2]
+- [ ] [Task 3]
+
+---
+
+## Definition of Done
+
+- [ ] [Criterion 1]
+- [ ] [Criterion 2]
+- [ ] No regressions introduced
+
+---
+
+## Edge Cases & Risks
+
+- ⚠️ [Risk 1]
+- ⚠️ [Risk 2]
+- 🔍 [Thing to monitor]
+
+---
+
+## Key Sources
+
+| Source | Contribution |
+|--------|--------------|
+| [Source 1] | [What it provided] |
+| [Source 2] | [What it provided] |
+
+---
+
+*Generated from research: `research/{{SLUG}}-{{DATE}}.md`*
+*Use `/plan #<issue-number>` to create detailed implementation plan*
+===ISSUE_BODY_END===
+```
+
+Replace {{SLUG}} with a kebab-case slug derived from the topic (e.g., "add-dark-mode", "fix-login-bug").
+Replace {{DATE}} with today's date in YYYY-MM-DD format.
+
+IMPORTANT: The issue body between the markers will be extracted and used to create a GitHub issue. Make it meticulous and actionable.
