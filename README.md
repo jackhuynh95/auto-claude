@@ -34,8 +34,8 @@ End-to-end automation: Research → GitHub Issue → Plan → Code → PR
 | `ship-issue.sh` | `./ship-issue.sh 42 --auto` | YOLO mode |
 | `ship-issues.sh` | `./ship-issues.sh "39,41,42"` | **Batch:** multiple issues sequentially |
 | `ship-issues.sh` | `./ship-issues.sh "39,41" --auto` | Batch YOLO mode |
-| `fix-issue.sh` | `./fix-issue.sh 42` | **Bug fix:** plan → code → fix loop → PR |
-| `fix-issue.sh` | `./fix-issue.sh 42 --hard` | **Hard mode:** skip plan/code, fix loop only |
+| `fix-issue.sh` | `./fix-issue.sh 42` | **Bug fix:** `/fix` loop → PR |
+| `fix-issue.sh` | `./fix-issue.sh 42 --hard` | `/fix:hard` for complex issues |
 | `fix-issue.sh` | `./fix-issue.sh 42 --auto --codex` | With Codex fallback |
 | `fix-issue.sh` | `./fix-issue.sh 42 --auto --opencode` | With OpenCode fallback |
 | `ship-issue-no-test.sh` | `./ship-issue-no-test.sh 42` | Skip tests (docs/config) |
@@ -111,34 +111,31 @@ Failed:        1 - [42]
 
 ## fix-issue.sh (Bug Fix Workflow)
 
-**For bug issues - uses plan → code → fix loop with optional fallback.**
+**For bug issues - uses `/fix` loop with optional `/fix:hard` for complex issues.**
 
 ```bash
-./fix-issue.sh 42                      # Interactive
+./fix-issue.sh 42                      # /fix loop
 ./fix-issue.sh 42 --auto               # YOLO mode
-./fix-issue.sh 42 --hard               # Skip plan/code, fix loop only
+./fix-issue.sh 42 --hard               # /fix:hard for complex issues
 ./fix-issue.sh 42 --auto --codex       # Codex (GPT-5.2-high) fallback
 ./fix-issue.sh 42 --auto --opencode    # OpenCode fallback
 ```
 
-**Workflow (7 steps):**
+**Workflow (5 steps):**
 1. Branch setup (`fix/issue-{num}-{slug}`)
-2. Planning via `/plan` (full analysis) - *skipped with --hard*
-3. Implementation via `/code:auto` - *skipped with --hard*
-4. **Fix loop** - builds, detects errors, runs `/fix` (max 3 retries)
-5. **Fallback** - if errors persist, uses Codex or OpenCode
-6. Commit changes
-7. Create PR + add `shipped` label
+2. **Fix loop** - runs `/fix` or `/fix:hard`, builds, retries (max 3)
+3. **Fallback** - if errors persist, uses Codex or OpenCode
+4. Commit changes
+5. Create PR + add `shipped` label
 
 **Modes:**
-- **Default** - full workflow: plan → code → fix loop
-- **--hard** - skip plan/code, go straight to fix loop (like `/fix:hard`)
+- **Default** - uses `/fix` command
+- **--hard** - uses `/fix:hard` for complex/architectural issues
 
 **Key differences from ship-issue.sh:**
-- Uses `/plan` (full) instead of `/plan:fast`
-- Has fix loop that retries up to `FIX_MAX_RETRIES` times (default: 3)
-- Supports `--codex` or `--opencode` fallback when Claude can't fix
-- Supports `--hard` mode to skip plan/code phases
+- No planning or coding phases - pure fix loop
+- Retries up to `FIX_MAX_RETRIES` times (default: 3)
+- Supports `--codex` or `--opencode` fallback
 
 **Environment variables:**
 - `FIX_AUTO=true` - same as `--auto` flag

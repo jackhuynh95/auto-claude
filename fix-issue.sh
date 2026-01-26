@@ -2,14 +2,14 @@
 # ==============================================================================
 # Script Name: fix-issue.sh
 # Description: Automates GitHub bug fix workflow via Claude CLI
-#              Follows: Plan → Code → Fix loop with optional fallback tools
+#              Uses /fix loop with optional --hard mode for complex issues
 #
 # Usage:       ./fix-issue.sh <issue-number> [--auto] [--hard] [--codex|--opencode]
-# Example:     ./fix-issue.sh 42
-#              ./fix-issue.sh 42 --auto              # YOLO mode
-#              ./fix-issue.sh 42 --auto --hard       # Skip plan/code, fix loop only
-#              ./fix-issue.sh 42 --auto --codex      # Codex fallback (GPT-5.2)
-#              ./fix-issue.sh 42 --auto --opencode   # OpenCode fallback
+# Example:     ./fix-issue.sh 42                      # /fix loop
+#              ./fix-issue.sh 42 --auto               # YOLO mode
+#              ./fix-issue.sh 42 --hard               # /fix:hard for complex issues
+#              ./fix-issue.sh 42 --auto --codex       # Codex fallback (GPT-5.2)
+#              ./fix-issue.sh 42 --auto --opencode    # OpenCode fallback
 #
 # Requirements:
 #   - Claude CLI installed and authenticated
@@ -38,7 +38,7 @@ MAX_RETRIES="${FIX_MAX_RETRIES:-3}"
 
 # Parse flags
 AUTO_MODE=""
-HARD_MODE=""      # skip plan/code, go straight to fix loop
+HARD_MODE=""      # use /fix:hard instead of /fix
 FALLBACK_TOOL=""  # "codex" or "opencode"
 for arg in "$@"; do
     case "$arg" in
@@ -48,6 +48,10 @@ for arg in "$@"; do
         --opencode) FALLBACK_TOOL="opencode" ;;
     esac
 done
+
+# Determine fix command
+FIX_CMD="/fix"
+[[ "$HARD_MODE" == "true" ]] && FIX_CMD="/fix:hard"
 
 # Cached issue data
 ISSUE_JSON=""
@@ -117,7 +121,7 @@ preflight_check() {
     info "Running pre-flight checks..."
 
     if [[ -z "$ISSUE_NUM" ]]; then
-        error "Usage: $0 <issue-number> [--auto] [--codex|--opencode]"
+        error "Usage: $0 <issue-number> [--auto] [--hard] [--codex|--opencode]"
         exit 1
     fi
 
@@ -202,7 +206,6 @@ run_codex() {
 
     info "Running Codex (GPT-5.2-high) fallback..."
 
-    # Codex CLI with full-auto mode
     codex --model gpt-5.2-high --full-auto "$prompt" 2>&1 | tee -a "$LOG_FILE"
     return ${PIPESTATUS[0]}
 }
@@ -212,7 +215,6 @@ run_opencode() {
 
     info "Running OpenCode fallback..."
 
-    # OpenCode with prompt
     opencode -p "$prompt" --auto-approve 2>&1 | tee -a "$LOG_FILE"
     return ${PIPESTATUS[0]}
 }
@@ -246,49 +248,24 @@ step_1_branch() {
     echo "$branch"
 }
 
-step_2_plan() {
-    info "Step 2: Planning (Opus recommended)"
-
-    local issue_content="${ISSUE_TITLE}
-
-${ISSUE_BODY}"
-
-    run_claude "/plan Fix GitHub issue #$ISSUE_NUM:
-
-$issue_content
-
-Analyze root cause and create fix plan."
-
-    success "Plan created"
-}
-
-step_3_code() {
-    info "Step 3: Implementation (Sonnet recommended)"
-
-    local plan_path=$(find ./plans -name "plan.md" -type f -exec stat -f "%m %N" {} \; 2>/dev/null | sort -rn | head -1 | cut -d' ' -f2-)
-
-    if [[ -z "$plan_path" ]]; then
-        plan_path=$(find ./plans -name "plan.md" -type f 2>/dev/null | head -1)
-    fi
-
-    if [[ -z "$plan_path" ]]; then
-        warn "No plan found, coding from issue directly"
-        run_claude "/code:auto Fix issue #$ISSUE_NUM: $ISSUE_TITLE"
-    else
-        run_claude "/code:auto $plan_path"
-    fi
-
-    success "Initial implementation done"
-}
-
-step_4_fix_loop() {
-    info "Step 4: Fix Loop (max $MAX_RETRIES attempts)"
+step_2_fix_loop() {
+    info "Step 2: Fix Loop using $FIX_CMD (max $MAX_RETRIES attempts)"
 
     local attempt=1
     local has_errors=true
 
+    # Build issue context
+    local issue_context="GitHub Issue #$ISSUE_NUM: $ISSUE_TITLE
+
+$ISSUE_BODY"
+
     while [[ "$has_errors" == "true" ]] && [[ $attempt -le $MAX_RETRIES ]]; do
         info "Fix attempt $attempt/$MAX_RETRIES"
+
+        # Run fix command with issue context
+        run_claude "$FIX_CMD Fix this issue:
+
+$issue_context"
 
         # Run build/tests to check for errors
         local build_output=""
@@ -302,18 +279,18 @@ step_4_fix_loop() {
 
         # Check for errors
         if echo "$build_output" | grep -qi "error\|failed\|exception"; then
-            warn "Errors detected, running /fix..."
+            warn "Errors remain after fix attempt $attempt"
 
             local error_snippet=$(echo "$build_output" | grep -i "error\|failed" | head -20)
-            run_claude "/fix Build errors detected:
+            issue_context="Build errors after fix attempt:
 
 $error_snippet
 
-Fix these errors."
+Original issue: $ISSUE_TITLE"
 
             ((attempt++))
         else
-            success "No build errors detected"
+            success "No build errors - fix successful"
             has_errors=false
         fi
     done
@@ -322,23 +299,23 @@ Fix these errors."
         warn "Max retries reached with errors remaining"
 
         if [[ -n "$FALLBACK_TOOL" ]]; then
-            step_4b_fallback
+            step_2b_fallback
         else
             warn "Consider using --codex or --opencode flag for fallback"
         fi
     fi
 }
 
-step_4b_fallback() {
-    info "Step 4b: Fallback ($FALLBACK_TOOL)"
+step_2b_fallback() {
+    info "Step 2b: Fallback ($FALLBACK_TOOL)"
 
     run_fallback "Fix the remaining build errors in this project. The issue being fixed is #$ISSUE_NUM: $ISSUE_TITLE"
 
     success "Fallback ($FALLBACK_TOOL) complete"
 }
 
-step_5_post_reports() {
-    info "Step 5: Post Reports"
+step_3_post_reports() {
+    info "Step 3: Post Reports"
 
     local app_reports=$(find ./apps -type f -iname "*report*.md" 2>/dev/null || true)
 
@@ -357,8 +334,8 @@ step_5_post_reports() {
     success "Reports posted"
 }
 
-step_6_commit() {
-    info "Step 6: Commit"
+step_4_commit() {
+    info "Step 4: Commit"
 
     if [[ -z "$(git status --porcelain)" ]]; then
         warn "No changes to commit"
@@ -378,8 +355,8 @@ EOF
     success "Changes committed"
 }
 
-step_7_pr() {
-    info "Step 7: Create PR"
+step_5_pr() {
+    info "Step 5: Create PR"
 
     local branch=$(git branch --show-current)
 
@@ -420,7 +397,7 @@ EOF
 main() {
     info "=========================================="
     info "Fix Issue #$ISSUE_NUM"
-    [[ "$HARD_MODE" == "true" ]] && info "Mode: HARD (skip plan/code)"
+    info "Command: $FIX_CMD"
     info "=========================================="
 
     cd "$PROJECT_ROOT"
@@ -428,19 +405,10 @@ main() {
     preflight_check
 
     local branch=$(step_1_branch)
-
-    # --hard skips plan/code, goes straight to fix loop
-    if [[ "$HARD_MODE" != "true" ]]; then
-        step_2_plan
-        step_3_code
-    else
-        info "Skipping plan/code (--hard mode)"
-    fi
-
-    step_4_fix_loop
-    step_5_post_reports
-    step_6_commit
-    local pr_url=$(step_7_pr)
+    step_2_fix_loop
+    step_3_post_reports
+    step_4_commit
+    local pr_url=$(step_5_pr)
 
     echo ""
     echo "=========================================="
