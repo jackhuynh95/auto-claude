@@ -1,0 +1,49 @@
+# Dependencies
+node_modules
+__pycache__
+
+# Build outputs
+dist/
+build/
+coverage/
+
+# Logs
+logs/
+*.log
+
+# Environment
+.env*
+!.env.example
+
+# IDE
+.idea/
+.vscode/
+*.swp
+
+# OS
+.DS_Store
+Thumbs.db
+
+# Claude Code
+.claude/*
+
+# Claude Kit
+.repomix
+repomix-output.xml
+.repomixignore
+release-manifest.json
+plans/templates/
+
+# Gemini CLI
+.gemini/settings.json
+
+# Screenshots & research (generated)
+screenshots/
+docs/screenshots/
+docs/journals/
+docs/research/
+
+# Temp files
+prompt.md
+logs.txt
+test-ck
