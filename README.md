@@ -32,6 +32,8 @@ End-to-end automation: Research → GitHub Issue → Plan → Code → PR
 | `research.sh` | `./research.sh "topic" --auto` | Quick issue (YOLO) |
 | `ship-issue.sh` | `./ship-issue.sh 42` | Full: plan → code → test → PR |
 | `ship-issue.sh` | `./ship-issue.sh 42 --auto` | YOLO mode |
+| `ship-issues.sh` | `./ship-issues.sh "39,41,42"` | **Batch:** multiple issues sequentially |
+| `ship-issues.sh` | `./ship-issues.sh "39,41" --auto` | Batch YOLO mode |
 | `ship-issue-no-test.sh` | `./ship-issue-no-test.sh 42` | Skip tests (docs/config) |
 | `test-only.sh` | `./test-only.sh` | Run `/test` via Claude CLI |
 | `test-only.sh` | `./test-only.sh --fix` | YOLO mode |
@@ -43,6 +45,7 @@ End-to-end automation: Research → GitHub Issue → Plan → Code → PR
 **Scripts with full implementation:**
 - `research.sh` - hypothesis-driven research → `research/*.md` file → structured GitHub issue
 - `ship-issue.sh` - 6-step workflow (branch → plan → code → post reports → commit → PR)
+- `ship-issues.sh` - batch wrapper: process multiple issues sequentially with main reset between each
 - `ship-issue-no-test.sh` - same as ship-issue but uses `/code:no-test`
 
 ---
@@ -67,6 +70,37 @@ End-to-end automation: Research → GitHub Issue → Plan → Code → PR
 - `gh` (GitHub CLI)
 - `jq` (JSON processor)
 - `claude` (Claude CLI)
+
+---
+
+## ship-issues.sh (Batch Mode)
+
+**Process multiple issues sequentially with clean isolation.**
+
+```bash
+./ship-issues.sh "39,41,42" --auto
+```
+
+**Flow:**
+1. Parse comma-separated issue numbers
+2. For each issue:
+   - `git checkout main && git pull` (clean slate)
+   - Run `./ship-issue.sh <issue> [--auto]`
+   - Track success/failure
+3. Final reset to main
+4. Print summary
+
+**Output:**
+```
+Total Issues:  3
+Succeeded:     2 - [39 41]
+Failed:        1 - [42]
+```
+
+**Features:**
+- Continues processing even if one issue fails
+- Each issue gets fresh main branch (no conflicts)
+- Batch log: `logs/ship-batch-*.log`
 
 ---
 
@@ -106,7 +140,8 @@ jobs:
 .auto-claude/
 ├── README.md             # This file
 ├── research.sh           # Full impl: research → research/*.md → GitHub issue
-├── ship-issue.sh         # Full impl: plan → code → reports → PR
+├── ship-issue.sh         # Full impl: plan → code → reports → PR (single issue)
+├── ship-issues.sh        # Batch: multiple issues sequentially (wraps ship-issue.sh)
 ├── ship-issue-no-test.sh # Full impl: plan → code → PR (no test)
 ├── test-only.sh          # Delegates to /test
 └── prompts/
