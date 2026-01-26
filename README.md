@@ -34,6 +34,9 @@ End-to-end automation: Research → GitHub Issue → Plan → Code → PR
 | `ship-issue.sh` | `./ship-issue.sh 42 --auto` | YOLO mode |
 | `ship-issues.sh` | `./ship-issues.sh "39,41,42"` | **Batch:** multiple issues sequentially |
 | `ship-issues.sh` | `./ship-issues.sh "39,41" --auto` | Batch YOLO mode |
+| `fix-issue.sh` | `./fix-issue.sh 42` | **Bug fix:** plan → code → fix loop → PR |
+| `fix-issue.sh` | `./fix-issue.sh 42 --auto --codex` | With Codex fallback |
+| `fix-issue.sh` | `./fix-issue.sh 42 --auto --opencode` | With OpenCode fallback |
 | `ship-issue-no-test.sh` | `./ship-issue-no-test.sh 42` | Skip tests (docs/config) |
 | `test-only.sh` | `./test-only.sh` | Run `/test` via Claude CLI |
 | `test-only.sh` | `./test-only.sh --fix` | YOLO mode |
@@ -46,6 +49,7 @@ End-to-end automation: Research → GitHub Issue → Plan → Code → PR
 - `research.sh` - hypothesis-driven research → `research/*.md` file → structured GitHub issue
 - `ship-issue.sh` - 6-step workflow (branch → plan → code → post reports → commit → PR)
 - `ship-issues.sh` - batch wrapper: process multiple issues sequentially with main reset between each
+- `fix-issue.sh` - bug fix workflow with fix loop + Codex/OpenCode fallback
 - `ship-issue-no-test.sh` - same as ship-issue but uses `/code:no-test`
 
 ---
@@ -104,6 +108,37 @@ Failed:        1 - [42]
 
 ---
 
+## fix-issue.sh (Bug Fix Workflow)
+
+**For bug issues - uses plan → code → fix loop with optional fallback.**
+
+```bash
+./fix-issue.sh 42                      # Interactive
+./fix-issue.sh 42 --auto               # YOLO mode
+./fix-issue.sh 42 --auto --codex       # Codex (GPT-5.2-high) fallback
+./fix-issue.sh 42 --auto --opencode    # OpenCode fallback
+```
+
+**Workflow (7 steps):**
+1. Branch setup (`fix/issue-{num}-{slug}`)
+2. Planning via `/plan` (full analysis)
+3. Implementation via `/code:auto`
+4. **Fix loop** - builds, detects errors, runs `/fix` (max 3 retries)
+5. **Fallback** - if errors persist, uses Codex or OpenCode
+6. Commit changes
+7. Create PR + add `shipped` label
+
+**Key differences from ship-issue.sh:**
+- Uses `/plan` (full) instead of `/plan:fast`
+- Has fix loop that retries up to `FIX_MAX_RETRIES` times (default: 3)
+- Supports `--codex` or `--opencode` fallback when Claude can't fix
+
+**Environment variables:**
+- `FIX_AUTO=true` - same as `--auto` flag
+- `FIX_MAX_RETRIES=3` - max fix attempts before fallback
+
+---
+
 ## CI/CD Example
 
 ```yaml
@@ -142,6 +177,7 @@ jobs:
 ├── research.sh           # Full impl: research → research/*.md → GitHub issue
 ├── ship-issue.sh         # Full impl: plan → code → reports → PR (single issue)
 ├── ship-issues.sh        # Batch: multiple issues sequentially (wraps ship-issue.sh)
+├── fix-issue.sh          # Bug fix: plan → code → fix loop → fallback → PR
 ├── ship-issue-no-test.sh # Full impl: plan → code → PR (no test)
 ├── test-only.sh          # Delegates to /test
 └── prompts/
@@ -183,4 +219,5 @@ jobs:
 
 ## Reference
 
-Based on: "Engineering Report: Autonomous Orchestration of Claude Code CLI"
+- [ClaudeKit Workflow](./claudekit-workflow.md) - Recommended workflow for fixing issues (Plan → Code → Fix → Codex fallback)
+- Based on: "Engineering Report: Autonomous Orchestration of Claude Code CLI"
