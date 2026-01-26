@@ -45,12 +45,13 @@ End-to-end automation: Research → GitHub Issue → Plan → Code → PR
 
 **Scripts that delegate to Claude CLI commands:**
 - `test-only.sh` → `/test`
+- `fix-issue.sh` → `/fix` or `/fix:hard`
 
 **Scripts with full implementation:**
 - `research.sh` - hypothesis-driven research → `research/*.md` file → structured GitHub issue
 - `ship-issue.sh` - 6-step workflow (branch → plan → code → post reports → commit → PR)
 - `ship-issues.sh` - batch wrapper: process multiple issues sequentially with main reset between each
-- `fix-issue.sh` - bug fix workflow with fix loop + Codex/OpenCode fallback
+- `fix-issue.sh` - `/fix` loop (--hard for `/fix:hard`) + Codex/OpenCode fallback
 - `ship-issue-no-test.sh` - same as ship-issue but uses `/code:no-test`
 
 ---
