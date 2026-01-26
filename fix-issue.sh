@@ -4,9 +4,10 @@
 # Description: Automates GitHub bug fix workflow via Claude CLI
 #              Follows: Plan → Code → Fix loop with optional fallback tools
 #
-# Usage:       ./fix-issue.sh <issue-number> [--auto] [--codex|--opencode]
+# Usage:       ./fix-issue.sh <issue-number> [--auto] [--hard] [--codex|--opencode]
 # Example:     ./fix-issue.sh 42
 #              ./fix-issue.sh 42 --auto              # YOLO mode
+#              ./fix-issue.sh 42 --auto --hard       # Skip plan/code, fix loop only
 #              ./fix-issue.sh 42 --auto --codex      # Codex fallback (GPT-5.2)
 #              ./fix-issue.sh 42 --auto --opencode   # OpenCode fallback
 #
@@ -37,10 +38,12 @@ MAX_RETRIES="${FIX_MAX_RETRIES:-3}"
 
 # Parse flags
 AUTO_MODE=""
+HARD_MODE=""      # skip plan/code, go straight to fix loop
 FALLBACK_TOOL=""  # "codex" or "opencode"
 for arg in "$@"; do
     case "$arg" in
         --auto) AUTO_MODE="--auto" ;;
+        --hard) HARD_MODE="true" ;;
         --codex) FALLBACK_TOOL="codex" ;;
         --opencode) FALLBACK_TOOL="opencode" ;;
     esac
@@ -417,6 +420,7 @@ EOF
 main() {
     info "=========================================="
     info "Fix Issue #$ISSUE_NUM"
+    [[ "$HARD_MODE" == "true" ]] && info "Mode: HARD (skip plan/code)"
     info "=========================================="
 
     cd "$PROJECT_ROOT"
@@ -424,8 +428,15 @@ main() {
     preflight_check
 
     local branch=$(step_1_branch)
-    step_2_plan
-    step_3_code
+
+    # --hard skips plan/code, goes straight to fix loop
+    if [[ "$HARD_MODE" != "true" ]]; then
+        step_2_plan
+        step_3_code
+    else
+        info "Skipping plan/code (--hard mode)"
+    fi
+
     step_4_fix_loop
     step_5_post_reports
     step_6_commit
