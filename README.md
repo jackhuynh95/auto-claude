@@ -96,6 +96,7 @@ This downloads scripts to `.auto-claude/` and adds it to `.gitignore`.
 - `gh` (GitHub CLI)
 - `jq` (JSON processor)
 - `claude` (Claude CLI)
+- [ClaudeKit Engineer](https://github.com/claudekit) (paid) - provides `/plan`, `/code`, `/fix`, `/test` slash commands
 
 ---
 
