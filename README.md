@@ -34,7 +34,7 @@ gh issue edit 42 --add-label "pipeline" --add-label "ready_for_dev"
 - `gh` (GitHub CLI)
 - `jq`
 - `git` with push access
-- [ClaudeKit Engineer](https://github.com/claudekit) — provides `/plan`, `/code`, `/fix`, `/test` slash commands
+- [ClaudeKit Engineer](https://github.com/claudekit) (paid) — provides `/plan`, `/code`, `/fix`, `/test` slash commands
 
 ---
 
