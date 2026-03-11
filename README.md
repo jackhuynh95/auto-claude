@@ -1,6 +1,6 @@
 # Auto-Claude
 
-Autonomous issue processing pipeline powered by Claude Code CLI.
+Autonomous issue processing pipeline powered by Claude Code CLI + [ClaudeKit Engineer](https://github.com/claudekit).
 
 ```
 GitHub Issues → looper.sh → fix-issue.sh / ship-issue.sh → PR
@@ -34,6 +34,7 @@ gh issue edit 42 --add-label "pipeline" --add-label "ready_for_dev"
 - `gh` (GitHub CLI)
 - `jq`
 - `git` with push access
+- [ClaudeKit Engineer](https://github.com/claudekit) — provides `/plan`, `/code`, `/fix`, `/test` slash commands
 
 ---
 
