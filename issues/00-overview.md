@@ -18,13 +18,13 @@ GitHub Issue Labels = Kanban Columns
 
 | # | Title | Status | Priority | Depends On |
 |---|-------|--------|----------|------------|
-| 01 | [Looper Script](./01-looper-script.md) | todo | high | 02, 03, 04 |
-| 02 | [Label Pipeline Setup](./02-label-pipeline.md) | todo | high | — |
-| 03 | [Worktree Flag](./03-worktree-flag.md) | todo | high | — |
-| 04 | [E2E Flag](./04-e2e-flag.md) | todo | medium | — |
-| 05 | [Scheduling Profiles](./05-looper-scheduling.md) | todo | medium | 01, 02 |
-| 06 | [Frontend Design Flag](./06-frontend-design-flag.md) | todo | low | — |
-| 07 | [Model Routing](./07-model-routing.md) | todo | high | — |
+| 01 | [Looper Script](./01-looper-script.md) | done | high | 02, 03, 04 |
+| 02 | [Label Pipeline Setup](./02-label-pipeline.md) | done | high | — |
+| 03 | [Worktree Flag](./03-worktree-flag.md) | done | high | — |
+| 04 | [E2E Flag](./04-e2e-flag.md) | done | medium | — |
+| 05 | [Scheduling Profiles](./05-looper-scheduling.md) | done | medium | 01, 02 |
+| 06 | [Frontend Design Flag](./06-frontend-design-flag.md) | done | low | — |
+| 07 | [Model Routing](./07-model-routing.md) | done | high | — |
 
 ## Build Order
 

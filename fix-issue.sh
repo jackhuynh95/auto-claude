@@ -4,10 +4,16 @@
 # Description: Automates GitHub bug fix workflow via Claude CLI
 #              Uses /fix loop with optional --hard mode for complex issues
 #
-# Usage:       ./fix-issue.sh <issue-number> [--auto] [--hard] [--codex|--opencode]
+# Usage:       ./fix-issue.sh <issue-number> [flags...]
 # Example:     ./fix-issue.sh 42                      # /fix loop
 #              ./fix-issue.sh 42 --auto               # YOLO mode
 #              ./fix-issue.sh 42 --hard               # /fix:hard for complex issues
+#              ./fix-issue.sh 42 --auto --worktree    # isolated git worktree
+#              ./fix-issue.sh 42 --auto --e2e         # fix then e2e verify
+#              ./fix-issue.sh 42 --e2e-only           # e2e test only (no fix)
+#              ./fix-issue.sh 42 --frontend-design    # fix then UI review
+#              ./fix-issue.sh 42 --frontend-design-only  # UI review only
+#              ./fix-issue.sh 42 --model opus         # force model
 #              ./fix-issue.sh 42 --auto --codex       # Codex fallback (GPT-5.2)
 #              ./fix-issue.sh 42 --auto --opencode    # OpenCode fallback
 #
@@ -38,20 +44,51 @@ MAX_RETRIES="${FIX_MAX_RETRIES:-3}"
 
 # Parse flags
 AUTO_MODE=""
-HARD_MODE=""      # use /fix:hard instead of /fix
-FALLBACK_TOOL=""  # "codex" or "opencode"
+HARD_MODE=""           # use /fix:hard instead of /fix
+WORKTREE_MODE=""       # run fix in isolated git worktree
+E2E_MODE=""            # run e2e after fix
+E2E_ONLY=""            # run e2e only (no fix)
+FRONTEND_DESIGN=""     # run frontend-design review after fix
+FRONTEND_DESIGN_ONLY="" # run frontend-design review only (no fix)
+MODEL_OVERRIDE=""      # explicit model override
+FALLBACK_TOOL=""       # "codex" or "opencode"
+
+# Parse flags (skip first arg which is issue number)
 for arg in "$@"; do
     case "$arg" in
         --auto) AUTO_MODE="--auto" ;;
         --hard) HARD_MODE="true" ;;
+        --worktree) WORKTREE_MODE="true" ;;
+        --e2e) E2E_MODE="true" ;;
+        --e2e-only) E2E_ONLY="true" ;;
+        --frontend-design) FRONTEND_DESIGN="true" ;;
+        --frontend-design-only) FRONTEND_DESIGN_ONLY="true" ;;
+        --model) ;; # value handled below
         --codex) FALLBACK_TOOL="codex" ;;
         --opencode) FALLBACK_TOOL="opencode" ;;
     esac
 done
 
+# Parse --model value (needs lookahead)
+ARGS=("$@")
+for i in "${!ARGS[@]}"; do
+    if [[ "${ARGS[$i]}" == "--model" ]] && [[ -n "${ARGS[$((i+1))]:-}" ]]; then
+        MODEL_OVERRIDE="${ARGS[$((i+1))]}"
+    fi
+done
+
 # Determine fix command
 FIX_CMD="/fix"
 [[ "$HARD_MODE" == "true" ]] && FIX_CMD="/fix:hard"
+
+# Determine model: default sonnet for standard fixes, opus for --hard
+if [[ -n "$MODEL_OVERRIDE" ]]; then
+    MODEL_FLAG="--model $MODEL_OVERRIDE"
+elif [[ "$HARD_MODE" == "true" ]]; then
+    MODEL_FLAG=""  # default = opus for hard bugs
+else
+    MODEL_FLAG="--model sonnet"  # sonnet for standard fixes
+fi
 
 # Cached issue data
 ISSUE_JSON=""
@@ -121,7 +158,7 @@ preflight_check() {
     info "Running pre-flight checks..."
 
     if [[ -z "$ISSUE_NUM" ]]; then
-        error "Usage: $0 <issue-number> [--auto] [--hard] [--codex|--opencode]"
+        error "Usage: $0 <issue-number> [--auto] [--hard] [--worktree] [--e2e] [--e2e-only] [--frontend-design] [--model <model>] [--codex|--opencode]"
         exit 1
     fi
 
@@ -191,9 +228,9 @@ run_claude() {
         warn "YOLO mode enabled"
     fi
 
-    info "Running Claude: ${prompt:0:80}..."
+    info "Running Claude ($MODEL_FLAG): ${prompt:0:80}..."
 
-    claude -p "$prompt" $flags --continue --output-format text 2>&1 | tee -a "$LOG_FILE"
+    claude -p "$prompt" $flags $MODEL_FLAG --continue --output-format text 2>&1 | tee -a "$LOG_FILE"
     return ${PIPESTATUS[0]}
 }
 
@@ -239,12 +276,33 @@ step_1_branch() {
     local slug=$(echo "$ISSUE_TITLE" | tr '[:upper:]' '[:lower:]' | sed 's/[^a-z0-9]/-/g' | sed 's/--*/-/g' | cut -c1-40)
     local branch="fix/issue-${ISSUE_NUM}-${slug}"
 
-    git checkout -b "$branch" 2>/dev/null || {
-        warn "Branch exists, checking out..."
-        git checkout "$branch"
-    }
+    if [[ "$WORKTREE_MODE" == "true" ]]; then
+        WORKTREE_DIR="/tmp/fix-issue-${ISSUE_NUM}"
+        info "Creating worktree at $WORKTREE_DIR"
 
-    success "Branch: $branch"
+        # Clean up existing worktree if present
+        if [[ -d "$WORKTREE_DIR" ]]; then
+            warn "Worktree exists, removing..."
+            git worktree remove "$WORKTREE_DIR" --force 2>/dev/null || true
+            git branch -D "$branch" 2>/dev/null || true
+        fi
+
+        git worktree add "$WORKTREE_DIR" -b "$branch" 2>/dev/null || {
+            # Branch may exist without worktree
+            git branch -D "$branch" 2>/dev/null || true
+            git worktree add "$WORKTREE_DIR" -b "$branch"
+        }
+
+        cd "$WORKTREE_DIR"
+        success "Worktree: $WORKTREE_DIR (branch: $branch)"
+    else
+        git checkout -b "$branch" 2>/dev/null || {
+            warn "Branch exists, checking out..."
+            git checkout "$branch"
+        }
+        success "Branch: $branch"
+    fi
+
     echo "$branch"
 }
 
@@ -391,24 +449,147 @@ EOF
 }
 
 # ------------------------------------------------------------------------------
+# E2E Verification (Issue 04)
+# ------------------------------------------------------------------------------
+
+step_2c_e2e() {
+    info "Step 2c: E2E Verification"
+
+    # Pre-flight: check if services are running
+    if command -v curl &> /dev/null; then
+        curl -sf http://localhost:9000/health > /dev/null 2>&1 || {
+            warn "Medusa API not running at localhost:9000 - skipping e2e"
+            return 1
+        }
+    fi
+
+    run_claude "Run e2e-test scenarios to verify fix for issue #$ISSUE_NUM: $ISSUE_TITLE.
+Use the e2e-test skill. Run these scenarios: create-account, purchase-success.
+Report pass/fail."
+
+    local exit_code=$?
+    if [[ $exit_code -eq 0 ]]; then
+        success "E2E tests passed"
+        return 0
+    else
+        warn "E2E tests failed"
+        return 1
+    fi
+}
+
+# ------------------------------------------------------------------------------
+# Frontend Design Review (Issue 06)
+# ------------------------------------------------------------------------------
+
+step_2d_frontend_design() {
+    info "Step 2d: Frontend Design Review"
+
+    run_claude "Use the frontend-design skill to review the UI changes for issue #$ISSUE_NUM: $ISSUE_TITLE.
+Take screenshots and report any design issues. Do not auto-fix."
+
+    # Post results as issue comment
+    comment_issue "" "**Frontend Design Review** for #$ISSUE_NUM completed. Check logs for details."
+
+    success "Frontend design review complete"
+}
+
+# ------------------------------------------------------------------------------
+# Worktree Cleanup
+# ------------------------------------------------------------------------------
+
+cleanup_worktree() {
+    if [[ "$WORKTREE_MODE" == "true" ]] && [[ -n "${WORKTREE_DIR:-}" ]]; then
+        info "Cleaning up worktree..."
+        cd "$PROJECT_ROOT"
+        git worktree remove "$WORKTREE_DIR" --force 2>/dev/null || {
+            warn "Failed to remove worktree at $WORKTREE_DIR (manual cleanup needed)"
+        }
+        success "Worktree cleaned up"
+    fi
+}
+
+# ------------------------------------------------------------------------------
+# Label Transitions
+# ------------------------------------------------------------------------------
+
+transition_label() {
+    local remove_label="$1"
+    local add_label="$2"
+
+    if [[ -n "$remove_label" ]]; then
+        gh issue edit "$ISSUE_NUM" --remove-label "$remove_label" 2>/dev/null || true
+    fi
+    if [[ -n "$add_label" ]]; then
+        gh issue edit "$ISSUE_NUM" --add-label "$add_label" 2>/dev/null || true
+    fi
+    info "Label transition: -$remove_label +$add_label"
+}
+
+# ------------------------------------------------------------------------------
 # Main
 # ------------------------------------------------------------------------------
 
 main() {
     info "=========================================="
     info "Fix Issue #$ISSUE_NUM"
-    info "Command: $FIX_CMD"
+    info "Command: $FIX_CMD | Model: ${MODEL_FLAG:-opus (default)}"
+    [[ "$WORKTREE_MODE" == "true" ]] && info "Mode: worktree"
+    [[ "$E2E_MODE" == "true" ]] && info "Post-fix: e2e"
+    [[ "$E2E_ONLY" == "true" ]] && info "Mode: e2e-only"
+    [[ "$FRONTEND_DESIGN" == "true" ]] && info "Post-fix: frontend-design"
+    [[ "$FRONTEND_DESIGN_ONLY" == "true" ]] && info "Mode: frontend-design-only"
     info "=========================================="
 
     cd "$PROJECT_ROOT"
 
     preflight_check
 
+    # --- E2E-only mode: skip fix, just test ---
+    if [[ "$E2E_ONLY" == "true" ]]; then
+        if step_2c_e2e; then
+            transition_label "ready_for_test" "verified"
+            success "E2E passed — issue verified"
+        else
+            transition_label "ready_for_test" "ready_for_dev"
+            warn "E2E failed — re-queued for fix"
+        fi
+        return
+    fi
+
+    # --- Frontend-design-only mode ---
+    if [[ "$FRONTEND_DESIGN_ONLY" == "true" ]]; then
+        step_2d_frontend_design
+        return
+    fi
+
+    # --- Standard fix flow ---
     local branch=$(step_1_branch)
+
     step_2_fix_loop
+
+    # E2E after fix (gates PR creation)
+    if [[ "$E2E_MODE" == "true" ]]; then
+        if ! step_2c_e2e; then
+            warn "E2E failed — skipping PR creation"
+            transition_label "ready_for_dev" ""
+            cleanup_worktree
+            return
+        fi
+    fi
+
+    # Frontend design review after fix (report only, doesn't gate PR)
+    if [[ "$FRONTEND_DESIGN" == "true" ]]; then
+        step_2d_frontend_design
+    fi
+
     step_3_post_reports
     step_4_commit
     local pr_url=$(step_5_pr)
+
+    # Transition label after PR
+    transition_label "ready_for_dev" "ready_for_test"
+
+    cleanup_worktree
 
     echo ""
     echo "=========================================="
