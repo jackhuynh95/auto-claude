@@ -53,6 +53,7 @@ Issues need these labels to enter the automated pipeline:
 | `verified` | stage | E2e passed, can close |
 | `blocked` | stage | Skip in pipeline |
 | `frontend` | type | Touches UI — looper auto-adds `--frontend-design` |
+| `hard` | type | Complex issue — looper auto-adds `--hard` (opus model) |
 | `needs_design_review` | flag | Needs manual UI review (shown in summary, not auto-processed) |
 
 To add an issue to the pipeline:

@@ -6,11 +6,16 @@
 #              [BUG] → fix-issue.sh | [FEATURE]/[ENHANCEMENT] → ship-issue.sh
 #              [WONTFIX]/[WONTFEAT] → skipped | Bugs processed first (priority)
 #
+# Smart label routing:
+#   "frontend" label  → auto-adds --frontend-design
+#   "hard" label       → auto-adds --hard (opus for complex bugs)
+#   [DOCS]/[CHORE]     → auto-adds --no-test (skip tests)
+#
 # Usage:
 #   ./looper.sh                          # full scan
 #   ./looper.sh --label ready_for_dev    # single label
 #   ./looper.sh --dry-run                # scan only
-#   ./looper.sh --limit 3                # cap per run
+#   ./looper.sh --limit 3               # cap per run
 #   ./looper.sh --profile overnight      # scheduling profile
 #
 # Via /loop (Claude Code built-in, runs prompt on interval):
@@ -24,12 +29,20 @@ SCRIPT_DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
 PROJECT_ROOT="$(git -C "$SCRIPT_DIR" rev-parse --show-toplevel 2>/dev/null || echo "$SCRIPT_DIR")"
 LOG_DIR="${PROJECT_ROOT}/logs"
 LOG_FILE="${LOG_DIR}/looper-$(date +%Y%m%d-%H%M%S).log"
+LOCK_FILE="${LOG_DIR}/.looper.lock"
 
 # Defaults
 DRY_RUN=""
 LIMIT=10
 FILTER_LABEL=""
 PROFILE=""
+
+# Run results tracking
+TOTAL_PROCESSED=0
+TOTAL_SUCCEEDED=0
+TOTAL_FAILED=0
+TOTAL_SKIPPED=0
+RUN_START=$(date +%s)
 
 # Colors
 RED='\033[0;31m'
@@ -73,6 +86,31 @@ info() { log "INFO" "${BLUE}$*${NC}"; }
 success() { log "SUCCESS" "${GREEN}$*${NC}"; }
 warn() { log "WARN" "${YELLOW}$*${NC}"; }
 error() { log "ERROR" "${RED}$*${NC}"; }
+
+# ------------------------------------------------------------------------------
+# Lock File — prevent concurrent looper runs
+# ------------------------------------------------------------------------------
+
+acquire_lock() {
+    if [[ -f "$LOCK_FILE" ]]; then
+        local lock_pid=$(cat "$LOCK_FILE" 2>/dev/null)
+        if kill -0 "$lock_pid" 2>/dev/null; then
+            warn "Another looper is running (PID: $lock_pid) — exiting"
+            exit 0
+        else
+            warn "Stale lock file found (PID: $lock_pid dead) — removing"
+            rm -f "$LOCK_FILE"
+        fi
+    fi
+    echo $$ > "$LOCK_FILE"
+}
+
+release_lock() {
+    rm -f "$LOCK_FILE"
+}
+
+# Clean up lock on exit (normal or error)
+trap release_lock EXIT
 
 # ------------------------------------------------------------------------------
 # Profile Loading (Issue 05)
@@ -161,14 +199,34 @@ print_summary() {
     echo ""
 }
 
+# Print run results (end of run)
+print_run_results() {
+    local run_end=$(date +%s)
+    local duration=$(( run_end - RUN_START ))
+    local mins=$(( duration / 60 ))
+    local secs=$(( duration % 60 ))
+
+    echo ""
+    echo -e "${CYAN}═══════════════════════════════════════${NC}"
+    echo -e "${CYAN}  Run Results${NC}"
+    echo -e "${CYAN}═══════════════════════════════════════${NC}"
+    echo -e "  Processed:  ${TOTAL_PROCESSED}"
+    echo -e "  Succeeded:  ${GREEN}${TOTAL_SUCCEEDED}${NC}"
+    echo -e "  Failed:     ${RED}${TOTAL_FAILED}${NC}"
+    echo -e "  Skipped:    ${YELLOW}${TOTAL_SKIPPED}${NC}"
+    echo -e "  Duration:   ${mins}m ${secs}s"
+    echo -e "${CYAN}═══════════════════════════════════════${NC}"
+    echo ""
+}
+
 # ------------------------------------------------------------------------------
 # Issue Type Detection (from CLAUDE.md conventions)
 # ------------------------------------------------------------------------------
 # [BUG]         → fix-issue.sh
 # [FEATURE]     → ship-issue.sh
 # [ENHANCEMENT] → ship-issue.sh
-# [CHORE]       → ship-issue.sh
-# [DOCS]        → ship-issue.sh
+# [CHORE]       → ship-issue.sh  (+ --no-test)
+# [DOCS]        → ship-issue.sh  (+ --no-test)
 # [WONTFIX]     → SKIP
 # [WONTFEAT]    → SKIP
 
@@ -186,6 +244,13 @@ get_issue_type() {
     fi
 }
 
+# Check if title prefix suggests skipping tests
+is_no_test_type() {
+    local title="$1"
+    local upper_title=$(echo "$title" | tr '[:lower:]' '[:upper:]')
+    [[ "$upper_title" == *"[DOCS]"* ]] || [[ "$upper_title" == *"[CHORE]"* ]]
+}
+
 get_script_for_type() {
     local issue_type="$1"
     case "$issue_type" in
@@ -193,6 +258,50 @@ get_script_for_type() {
         ship) echo "ship-issue.sh" ;;
         *)    echo "" ;;  # skip
     esac
+}
+
+# ------------------------------------------------------------------------------
+# Smart Flag Builder — detects labels + title prefix to compose flags
+# ------------------------------------------------------------------------------
+
+build_issue_flags() {
+    local base_flags="$1"
+    local title="$2"
+    local labels_json="$3"  # raw jq array of label objects
+
+    local issue_flags="$base_flags"
+
+    # Label: "frontend" → --frontend-design (auto UI review)
+    local has_frontend=$(echo "$labels_json" | jq -r 'map(.name) | any(. == "frontend")')
+    [[ "$has_frontend" == "true" ]] && issue_flags="$issue_flags --frontend-design"
+
+    # Label: "hard" → --hard (opus for complex issues)
+    local has_hard=$(echo "$labels_json" | jq -r 'map(.name) | any(. == "hard")')
+    [[ "$has_hard" == "true" ]] && issue_flags="$issue_flags --hard"
+
+    # Title prefix: [DOCS] or [CHORE] → --no-test
+    if is_no_test_type "$title"; then
+        issue_flags="$issue_flags --no-test"
+    fi
+
+    echo "$issue_flags"
+}
+
+# Build human-readable suffix for log line
+build_flag_summary() {
+    local title="$1"
+    local labels_json="$2"
+    local parts=""
+
+    local has_frontend=$(echo "$labels_json" | jq -r 'map(.name) | any(. == "frontend")')
+    [[ "$has_frontend" == "true" ]] && parts="${parts}+design "
+
+    local has_hard=$(echo "$labels_json" | jq -r 'map(.name) | any(. == "hard")')
+    [[ "$has_hard" == "true" ]] && parts="${parts}+hard "
+
+    is_no_test_type "$title" && parts="${parts}+no-test "
+
+    echo "$parts"
 }
 
 # ------------------------------------------------------------------------------
@@ -220,6 +329,7 @@ process_issues_by_label() {
 
     if [[ "$skip_count" -gt 0 ]]; then
         warn "Skipping $skip_count WONTFIX/WONTFEAT issue(s)"
+        TOTAL_SKIPPED=$(( TOTAL_SKIPPED + skip_count ))
     fi
 
     if [[ "$bug_count" -eq 0 ]] && [[ "$feat_count" -eq 0 ]]; then
@@ -235,39 +345,48 @@ process_issues_by_label() {
     for row in $(echo "$ordered" | jq -r '.[] | @base64'); do
         local num=$(echo "$row" | base64 --decode | jq -r '.number')
         local title=$(echo "$row" | base64 --decode | jq -r '.title')
+        local labels_json=$(echo "$row" | base64 --decode | jq '.labels')
         local issue_type=$(get_issue_type "$title")
         local script=$(get_script_for_type "$issue_type")
 
         if [[ -z "$script" ]]; then
             warn "Skipping #$num: $title (WONTFIX/WONTFEAT)"
+            TOTAL_SKIPPED=$(( TOTAL_SKIPPED + 1 ))
             continue
         fi
 
-        # Auto-add --frontend-design if issue has "frontend" label
-        local issue_flags="$flags"
-        local has_frontend=$(echo "$row" | base64 --decode | jq -r '.labels | map(.name) | any(. == "frontend")')
-        [[ "$has_frontend" == "true" ]] && issue_flags="$issue_flags --frontend-design"
+        # Build smart flags from labels + title prefix
+        local issue_flags=$(build_issue_flags "$flags" "$title" "$labels_json")
+        local flag_summary=$(build_flag_summary "$title" "$labels_json")
 
-        info "Processing #$num ($issue_type → $script${has_frontend:+ +frontend-design}): $title"
+        info "Processing #$num ($issue_type → $script ${flag_summary}): $title"
 
         if [[ "$DRY_RUN" == "true" ]]; then
             info "[DRY RUN] Would run: ./$script $num $issue_flags"
         else
+            local issue_start=$(date +%s)
             cd "$PROJECT_ROOT"
-            bash "${PROJECT_ROOT}/${script}" "$num" $issue_flags 2>&1 | tee -a "$LOG_FILE" || {
-                warn "$script failed for #$num"
-            }
+
+            if bash "${PROJECT_ROOT}/${script}" "$num" $issue_flags 2>&1 | tee -a "$LOG_FILE"; then
+                local issue_end=$(date +%s)
+                local issue_duration=$(( issue_end - issue_start ))
+                success "#$num completed (${issue_duration}s)"
+                TOTAL_SUCCEEDED=$(( TOTAL_SUCCEEDED + 1 ))
+            else
+                local issue_end=$(date +%s)
+                local issue_duration=$(( issue_end - issue_start ))
+                warn "#$num failed (${issue_duration}s)"
+                TOTAL_FAILED=$(( TOTAL_FAILED + 1 ))
+            fi
         fi
 
-        ((processed++))
+        TOTAL_PROCESSED=$(( TOTAL_PROCESSED + 1 ))
 
-        if [[ $processed -ge $LIMIT ]]; then
+        if [[ $TOTAL_PROCESSED -ge $LIMIT ]]; then
             info "Reached limit ($LIMIT) — stopping"
             break
         fi
     done
-
-    return $processed
 }
 
 # ------------------------------------------------------------------------------
@@ -280,7 +399,7 @@ route_by_label() {
 
     case "$label" in
         ready_for_dev)
-            # Model routing (Issue 07): sonnet default for fixes, opus via --hard
+            # Model routing (Issue 07): sonnet default for fixes, opus via --hard label
             process_issues_by_label "ready_for_dev" "--auto --worktree $extra_flags"
             ;;
         ready_for_test)
@@ -329,6 +448,9 @@ main() {
 
     cd "$PROJECT_ROOT"
 
+    # Acquire lock (prevents concurrent runs)
+    acquire_lock
+
     # Load profile if specified
     [[ -n "$PROFILE" ]] && load_profile
 
@@ -352,7 +474,8 @@ main() {
         route_by_label "blocked"
     fi
 
-    # Always print summary at end
+    # Print results
+    print_run_results
     print_summary
 
     success "Looper scan complete"
