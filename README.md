@@ -8,6 +8,8 @@ GitHub Issues → looper.sh → fix-issue.sh / ship-issue.sh → PR
 
 **[→ Full Pipeline Guide](docs/PIPELINE.md)**
 
+> Claude can't run itself through .md files. The bash scripts are the true autonomous implementation.
+
 ---
 
 ## Quick Install
