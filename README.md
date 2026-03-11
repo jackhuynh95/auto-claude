@@ -10,6 +10,26 @@ GitHub Issues → looper.sh → fix-issue.sh / ship-issue.sh → PR
 
 ---
 
+## Quick Install
+
+**Add to any project:**
+```bash
+cd /path/to/your-project
+curl -fsSL https://raw.githubusercontent.com/jackhuynh95/auto-claude/main/install.sh | bash
+```
+
+This downloads scripts to `.auto-claude/` and adds it to `.gitignore`.
+
+**Usage:**
+```bash
+.auto-claude/ship-issue.sh 42        # Ship issue #42
+.auto-claude/fix-issue.sh 42         # Fix issue #42
+.auto-claude/fix-issue.sh 42 --hard  # Complex fix (/fix:hard)
+.auto-claude/ship-issues.sh "1,2,3"  # Batch ship
+```
+
+---
+
 ## Quick Start
 
 ```bash
