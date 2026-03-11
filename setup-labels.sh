@@ -19,5 +19,6 @@ gh label create "verified"         --description "E2e passed"                   
 gh label create "blocked"          --description "Blocked, skip in pipeline"     --color "D93F0B" --force
 gh label create "pipeline"         --description "In automated pipeline"         --color "C5DEF5" --force
 gh label create "needs_design_review" --description "Needs manual UI review"     --color "E4E669" --force
+gh label create "frontend"            --description "Touches UI/frontend — triggers design review in looper" --color "F9A825" --force
 
 echo "Done. Labels created/updated."

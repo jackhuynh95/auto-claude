@@ -144,6 +144,7 @@ print_summary() {
     local verified=$(gh issue list --label "verified" --state open --json number --jq 'length' 2>/dev/null || echo "?")
     local blocked=$(gh issue list --label "blocked" --state open --json number --jq 'length' 2>/dev/null || echo "?")
     local design_review=$(gh issue list --label "needs_design_review" --state open --json number --jq 'length' 2>/dev/null || echo "?")
+    local frontend=$(gh issue list --label "frontend" --state open --json number --jq 'length' 2>/dev/null || echo "?")
 
     echo ""
     echo -e "${CYAN}═══════════════════════════════════════${NC}"
@@ -155,6 +156,7 @@ print_summary() {
     echo -e "  verified:            ${verified} issues"
     echo -e "  blocked:             ${blocked} issues"
     echo -e "  needs_design_review: ${design_review} issues"
+    echo -e "  frontend:            ${frontend} issues"
     echo -e "${CYAN}═══════════════════════════════════════${NC}"
     echo ""
 }
@@ -241,13 +243,18 @@ process_issues_by_label() {
             continue
         fi
 
-        info "Processing #$num ($issue_type → $script): $title"
+        # Auto-add --frontend-design if issue has "frontend" label
+        local issue_flags="$flags"
+        local has_frontend=$(echo "$row" | base64 --decode | jq -r '.labels | map(.name) | any(. == "frontend")')
+        [[ "$has_frontend" == "true" ]] && issue_flags="$issue_flags --frontend-design"
+
+        info "Processing #$num ($issue_type → $script${has_frontend:+ +frontend-design}): $title"
 
         if [[ "$DRY_RUN" == "true" ]]; then
-            info "[DRY RUN] Would run: ./$script $num $flags"
+            info "[DRY RUN] Would run: ./$script $num $issue_flags"
         else
             cd "$PROJECT_ROOT"
-            bash "${PROJECT_ROOT}/${script}" "$num" $flags 2>&1 | tee -a "$LOG_FILE" || {
+            bash "${PROJECT_ROOT}/${script}" "$num" $issue_flags 2>&1 | tee -a "$LOG_FILE" || {
                 warn "$script failed for #$num"
             }
         fi

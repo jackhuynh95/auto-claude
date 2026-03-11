@@ -44,18 +44,23 @@ These prefixes control how the looper routes issues:
 
 Issues need these labels to enter the automated pipeline:
 
-| Label | Meaning |
-|-------|---------|
-| `pipeline` | Issue is in the automated pipeline |
-| `ready_for_dev` | Ready for Claude to fix/ship |
-| `ready_for_test` | Fix shipped, needs e2e verification |
-| `shipped` | PR created |
-| `verified` | E2e passed, can close |
-| `blocked` | Skip in pipeline |
+| Label | Type | Meaning |
+|-------|------|---------|
+| `pipeline` | stage | Issue is in the automated pipeline |
+| `ready_for_dev` | stage | Ready for Claude to fix/ship |
+| `ready_for_test` | stage | Fix shipped, needs e2e verification |
+| `shipped` | stage | PR created |
+| `verified` | stage | E2e passed, can close |
+| `blocked` | stage | Skip in pipeline |
+| `frontend` | type | Touches UI — looper auto-adds `--frontend-design` |
+| `needs_design_review` | flag | Needs manual UI review (shown in summary, not auto-processed) |
 
 To add an issue to the pipeline:
 ```bash
 gh issue edit 42 --add-label "pipeline" --add-label "ready_for_dev"
+
+# Frontend issue — looper will auto-run design review:
+gh issue edit 42 --add-label "pipeline" --add-label "ready_for_dev" --add-label "frontend"
 ```
 
 ### Workflow
