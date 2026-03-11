@@ -235,24 +235,26 @@ gh issue edit 42 --add-label "pipeline" --add-label "ready_for_dev"
 ### Usage
 
 ```bash
-# Manual run
+# Manual run (from terminal)
 bash .claude/scripts/looper.sh
-
-# Scan specific label only
-bash .claude/scripts/looper.sh --label ready_for_dev
-
-# Dry run (scan, don't execute)
-bash .claude/scripts/looper.sh --dry-run
-
-# Limit issues per run
-bash .claude/scripts/looper.sh --limit 3
-
-# With scheduling profile
-bash .claude/scripts/looper.sh --profile overnight
-
-# Via /loop (every 2 hours)
-/loop 2h "bash .claude/scripts/looper.sh"
+bash .claude/scripts/looper.sh --label ready_for_dev   # single label
+bash .claude/scripts/looper.sh --dry-run               # scan only
+bash .claude/scripts/looper.sh --limit 3               # cap per run
+bash .claude/scripts/looper.sh --profile overnight     # scheduling profile
 ```
+
+**Via `/loop` (Claude Code built-in)** — runs a prompt on a recurring interval:
+
+```
+# Inside Claude Code interactive session:
+/loop 2h bash .claude/scripts/looper.sh
+/loop 2h bash .claude/scripts/looper.sh --profile overnight
+/loop 4h bash .claude/scripts/looper.sh --profile daytime
+/loop 10m bash .claude/scripts/looper.sh --dry-run      # monitor only
+```
+
+`/loop <interval> <prompt>` — Claude executes the prompt every `<interval>` (default 10m).
+The prompt is run through Claude, which uses the Bash tool to execute the script.
 
 ### Scheduling Profiles
 

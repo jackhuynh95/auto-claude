@@ -11,8 +11,9 @@
 #   bash .claude/scripts/looper.sh --limit 3                # cap per run
 #   bash .claude/scripts/looper.sh --profile overnight      # scheduling profile
 #
-# Via /loop:
-#   /loop 2h "bash .claude/scripts/looper.sh"
+# Via /loop (Claude Code built-in, runs prompt on interval):
+#   /loop 2h bash .claude/scripts/looper.sh
+#   /loop 2h bash .claude/scripts/looper.sh --profile overnight
 # ==============================================================================
 
 set -euo pipefail
