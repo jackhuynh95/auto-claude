@@ -57,9 +57,9 @@ This downloads scripts to `.auto-claude/` and adds it to `.gitignore`.
 | `fix-issue.sh` | `./fix-issue.sh 42` | **Bug fix:** `/fix` loop → PR |
 | `fix-issue.sh` | `./fix-issue.sh 42 --hard` | `/fix:hard` (opus) for complex issues |
 | `fix-issue.sh` | `./fix-issue.sh 42 --auto --worktree --e2e` | Isolated worktree + e2e verify |
-| `looper.sh` | `bash .claude/scripts/looper.sh` | **Pipeline:** scan issues by label → dispatch |
-| `looper.sh` | `bash .claude/scripts/looper.sh --profile overnight` | With scheduling profile |
-| `setup-labels.sh` | `bash .claude/scripts/setup-labels.sh` | Create pipeline labels on GitHub |
+| `looper.sh` | `./looper.sh` | **Pipeline:** scan issues by label → dispatch |
+| `looper.sh` | `./looper.sh --profile overnight` | With scheduling profile |
+| `setup-labels.sh` | `./setup-labels.sh` | Create pipeline labels on GitHub (run once) |
 | `ship-issue-no-test.sh` | `./ship-issue-no-test.sh 42` | Skip tests (docs/config) |
 | `test-only.sh` | `./test-only.sh` | Run `/test` via Claude CLI |
 | `test-only.sh` | `./test-only.sh --fix` | YOLO mode |
@@ -226,7 +226,7 @@ ready_for_dev → ready_for_test → verified → closed
 
 ```bash
 # Create pipeline labels on GitHub (run once)
-bash .claude/scripts/setup-labels.sh
+./setup-labels.sh
 
 # Label an issue for the pipeline
 gh issue edit 42 --add-label "pipeline" --add-label "ready_for_dev"
@@ -236,21 +236,21 @@ gh issue edit 42 --add-label "pipeline" --add-label "ready_for_dev"
 
 ```bash
 # Manual run (from terminal)
-bash .claude/scripts/looper.sh
-bash .claude/scripts/looper.sh --label ready_for_dev   # single label
-bash .claude/scripts/looper.sh --dry-run               # scan only
-bash .claude/scripts/looper.sh --limit 3               # cap per run
-bash .claude/scripts/looper.sh --profile overnight     # scheduling profile
+./looper.sh
+./looper.sh --label ready_for_dev   # single label
+./looper.sh --dry-run               # scan only
+./looper.sh --limit 3               # cap per run
+./looper.sh --profile overnight     # scheduling profile
 ```
 
 **Via `/loop` (Claude Code built-in)** — runs a prompt on a recurring interval:
 
 ```
 # Inside Claude Code interactive session:
-/loop 2h bash .claude/scripts/looper.sh
-/loop 2h bash .claude/scripts/looper.sh --profile overnight
-/loop 4h bash .claude/scripts/looper.sh --profile daytime
-/loop 10m bash .claude/scripts/looper.sh --dry-run      # monitor only
+/loop 2h ./looper.sh
+/loop 2h ./looper.sh --profile overnight
+/loop 4h ./looper.sh --profile daytime
+/loop 10m ./looper.sh --dry-run      # monitor only
 ```
 
 `/loop <interval> <prompt>` — Claude executes the prompt every `<interval>` (default 10m).
@@ -265,7 +265,7 @@ The prompt is run through Claude, which uses the Bash tool to execute the script
 | `daytime` | `ready_for_test` e2e only, limit 3 |
 | `continuous` | All labels, `--auto --worktree`, limit 3 |
 
-Custom profiles: edit `.claude/scripts/looper-profiles.sh`.
+Custom profiles: edit `looper-profiles.sh`.
 
 ### Pipeline Flow
 
@@ -317,15 +317,18 @@ jobs:
 
 ```
 .auto-claude/
-├── README.md             # This file
-├── research.sh           # Full impl: research → research/*.md → GitHub issue
-├── ship-issue.sh         # Full impl: plan → code → reports → PR (single issue)
-├── ship-issues.sh        # Batch: multiple issues sequentially (wraps ship-issue.sh)
-├── fix-issue.sh          # Bug fix: plan → code → fix loop → fallback → PR
-├── ship-issue-no-test.sh # Full impl: plan → code → PR (no test)
-├── test-only.sh          # Delegates to /test
+├── README.md               # This file
+├── research.sh             # Research → research/*.md → GitHub issue
+├── ship-issue.sh           # Plan → code → PR (composable flags)
+├── ship-issues.sh          # Batch: multiple issues (wraps ship-issue.sh)
+├── fix-issue.sh            # Bug fix: /fix loop → PR (composable flags)
+├── ship-issue-no-test.sh   # Plan → code → PR (no test)
+├── test-only.sh            # Delegates to /test
+├── looper.sh               # Pipeline: scan issues by label → dispatch
+├── looper-profiles.sh      # Scheduling profiles for looper
+├── setup-labels.sh         # Create pipeline labels on GitHub
 └── prompts/
-    └── research.txt      # Research prompt template (hypothesis-driven methodology)
+    └── research.txt        # Research prompt template
 ```
 
 ---

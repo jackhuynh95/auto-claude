@@ -5,21 +5,21 @@
 #              with appropriate flags. The "commander" that /loop calls.
 #
 # Usage:
-#   bash .claude/scripts/looper.sh                          # full scan
-#   bash .claude/scripts/looper.sh --label ready_for_dev    # single label
-#   bash .claude/scripts/looper.sh --dry-run                # scan only
-#   bash .claude/scripts/looper.sh --limit 3                # cap per run
-#   bash .claude/scripts/looper.sh --profile overnight      # scheduling profile
+#   ./looper.sh                          # full scan
+#   ./looper.sh --label ready_for_dev    # single label
+#   ./looper.sh --dry-run                # scan only
+#   ./looper.sh --limit 3                # cap per run
+#   ./looper.sh --profile overnight      # scheduling profile
 #
 # Via /loop (Claude Code built-in, runs prompt on interval):
-#   /loop 2h bash .claude/scripts/looper.sh
-#   /loop 2h bash .claude/scripts/looper.sh --profile overnight
+#   /loop 2h ./looper.sh
+#   /loop 2h ./looper.sh --profile overnight
 # ==============================================================================
 
 set -euo pipefail
 
 SCRIPT_DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
-PROJECT_ROOT="$(cd "$SCRIPT_DIR/../.." && pwd)"
+PROJECT_ROOT="$(cd "$SCRIPT_DIR/.." && pwd)"
 LOG_DIR="${PROJECT_ROOT}/logs"
 LOG_FILE="${LOG_DIR}/looper-$(date +%Y%m%d-%H%M%S).log"
 
