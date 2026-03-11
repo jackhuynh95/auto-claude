@@ -21,7 +21,7 @@
 set -euo pipefail
 
 SCRIPT_DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
-PROJECT_ROOT="$(cd "$SCRIPT_DIR/.." && pwd)"
+PROJECT_ROOT="$(git -C "$SCRIPT_DIR" rev-parse --show-toplevel 2>/dev/null || echo "$SCRIPT_DIR")"
 LOG_DIR="${PROJECT_ROOT}/logs"
 LOG_FILE="${LOG_DIR}/looper-$(date +%Y%m%d-%H%M%S).log"
 
@@ -143,16 +143,18 @@ print_summary() {
     local shipped=$(gh issue list --label "shipped" --state open --json number --jq 'length' 2>/dev/null || echo "?")
     local verified=$(gh issue list --label "verified" --state open --json number --jq 'length' 2>/dev/null || echo "?")
     local blocked=$(gh issue list --label "blocked" --state open --json number --jq 'length' 2>/dev/null || echo "?")
+    local design_review=$(gh issue list --label "needs_design_review" --state open --json number --jq 'length' 2>/dev/null || echo "?")
 
     echo ""
     echo -e "${CYAN}═══════════════════════════════════════${NC}"
     echo -e "${CYAN}  Pipeline Summary — $(date '+%Y-%m-%d %H:%M')${NC}"
     echo -e "${CYAN}═══════════════════════════════════════${NC}"
-    echo -e "  ready_for_dev:   ${ready_dev} issues"
-    echo -e "  ready_for_test:  ${ready_test} issues"
-    echo -e "  shipped:         ${shipped} issues"
-    echo -e "  verified:        ${verified} issues"
-    echo -e "  blocked:         ${blocked} issues"
+    echo -e "  ready_for_dev:       ${ready_dev} issues"
+    echo -e "  ready_for_test:      ${ready_test} issues"
+    echo -e "  shipped:             ${shipped} issues"
+    echo -e "  verified:            ${verified} issues"
+    echo -e "  blocked:             ${blocked} issues"
+    echo -e "  needs_design_review: ${design_review} issues"
     echo -e "${CYAN}═══════════════════════════════════════${NC}"
     echo ""
 }
@@ -271,10 +273,12 @@ route_by_label() {
 
     case "$label" in
         ready_for_dev)
+            # Model routing (Issue 07): sonnet default for fixes, opus via --hard
             process_issues_by_label "ready_for_dev" "--auto --worktree $extra_flags"
             ;;
         ready_for_test)
-            process_issues_by_label "ready_for_test" "--e2e-only $extra_flags"
+            # Model routing (Issue 07): sonnet for e2e (execution task)
+            process_issues_by_label "ready_for_test" "--e2e-only --model sonnet $extra_flags"
             ;;
         verified)
             # Close verified issues

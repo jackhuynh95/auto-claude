@@ -66,16 +66,21 @@ gh issue edit 42 --add-label "pipeline" --add-label "ready_for_dev"
 
 ## Scripts
 
-All scripts live at the project root. Key composable flags: `--auto`, `--worktree`, `--e2e`, `--model <model>`.
+All scripts live at the project root. Key composable flags: `--auto`, `--worktree`, `--e2e`, `--no-test`, `--model <model>`.
 
 | Script | Purpose |
 |--------|---------|
 | `looper.sh` | Pipeline commander — scans issues, routes to fix/ship |
 | `fix-issue.sh` | Bug fix via `/fix` loop (default: sonnet, `--hard` uses opus) |
-| `ship-issue.sh` | Feature ship via plan → code → PR (default: sonnet) |
+| `ship-issue.sh` | Feature ship via plan(opus) → code(sonnet) → PR |
+| `ship-issue-no-test.sh` | Thin wrapper — `ship-issue.sh --no-test` |
 | `ship-issues.sh` | Batch wrapper — passes all flags through |
 | `setup-labels.sh` | Creates pipeline labels on GitHub (run once) |
 | `research.sh` | Research a topic → create GitHub issue |
+| `test-only.sh` | Run tests via Claude `/test` command |
+| `looper-profiles.sh` | Custom scheduling profiles for looper |
+| `install.sh` | Install auto-claude into another project |
+| `release.sh` | Create GitHub release |
 
 ## Running the Pipeline
 

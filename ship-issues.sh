@@ -27,7 +27,7 @@ set -euo pipefail
 # ------------------------------------------------------------------------------
 
 SCRIPT_DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
-PROJECT_ROOT="$(cd "$SCRIPT_DIR/.." && pwd)"
+PROJECT_ROOT="$(git -C "$SCRIPT_DIR" rev-parse --show-toplevel 2>/dev/null || echo "$SCRIPT_DIR")"
 LOG_FILE="${PROJECT_ROOT}/logs/ship-batch-$(date +%Y%m%d-%H%M%S).log"
 ISSUES_INPUT="${1:-}"
 # Collect all flags after the first arg (issue numbers)

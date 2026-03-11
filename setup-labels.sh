@@ -5,7 +5,7 @@
 #              Labels act as Kanban columns — no separate board needed.
 #              Safe to re-run (--force updates existing labels).
 #
-# Usage: bash .claude/scripts/setup-labels.sh
+# Usage: bash setup-labels.sh
 # ==============================================================================
 
 set -euo pipefail

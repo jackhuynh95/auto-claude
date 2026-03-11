@@ -37,7 +37,7 @@ set -euo pipefail
 # ------------------------------------------------------------------------------
 
 SCRIPT_DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
-PROJECT_ROOT="$(cd "$SCRIPT_DIR/.." && pwd)"
+PROJECT_ROOT="$(git -C "$SCRIPT_DIR" rev-parse --show-toplevel 2>/dev/null || echo "$SCRIPT_DIR")"
 LOG_FILE="${PROJECT_ROOT}/logs/fix-$(date +%Y%m%d-%H%M%S).log"
 ISSUE_NUM="${1:-}"
 MAX_RETRIES="${FIX_MAX_RETRIES:-3}"
@@ -81,13 +81,16 @@ done
 FIX_CMD="/fix"
 [[ "$HARD_MODE" == "true" ]] && FIX_CMD="/fix:hard"
 
-# Determine model: default sonnet for standard fixes, opus for --hard
+# Model routing (Issue 07): sonnet for /fix, opus for /fix:hard + design review
 if [[ -n "$MODEL_OVERRIDE" ]]; then
     MODEL_FLAG="--model $MODEL_OVERRIDE"
+    MODEL_FLAG_REASONING="--model $MODEL_OVERRIDE"
 elif [[ "$HARD_MODE" == "true" ]]; then
-    MODEL_FLAG=""  # default = opus for hard bugs
+    MODEL_FLAG=""                      # opus (default) for hard bugs
+    MODEL_FLAG_REASONING=""            # opus for reasoning tasks too
 else
-    MODEL_FLAG="--model sonnet"  # sonnet for standard fixes
+    MODEL_FLAG="--model sonnet"        # sonnet for standard fixes
+    MODEL_FLAG_REASONING=""            # opus for reasoning tasks (design review)
 fi
 
 # Cached issue data
@@ -484,8 +487,12 @@ Report pass/fail."
 step_2d_frontend_design() {
     info "Step 2d: Frontend Design Review"
 
+    # Save/restore model flag for reasoning task (Opus per Issue 07)
+    local save_model="$MODEL_FLAG"
+    MODEL_FLAG="$MODEL_FLAG_REASONING"
     run_claude "Use the frontend-design skill to review the UI changes for issue #$ISSUE_NUM: $ISSUE_TITLE.
 Take screenshots and report any design issues. Do not auto-fix."
+    MODEL_FLAG="$save_model"
 
     # Post results as issue comment
     comment_issue "" "**Frontend Design Review** for #$ISSUE_NUM completed. Check logs for details."
@@ -532,7 +539,7 @@ transition_label() {
 main() {
     info "=========================================="
     info "Fix Issue #$ISSUE_NUM"
-    info "Command: $FIX_CMD | Model: ${MODEL_FLAG:-opus (default)}"
+    info "Command: $FIX_CMD | Model: fix=${MODEL_FLAG:-opus} reasoning=${MODEL_FLAG_REASONING:-opus}"
     [[ "$WORKTREE_MODE" == "true" ]] && info "Mode: worktree"
     [[ "$E2E_MODE" == "true" ]] && info "Post-fix: e2e"
     [[ "$E2E_ONLY" == "true" ]] && info "Mode: e2e-only"

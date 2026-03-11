@@ -44,12 +44,12 @@ gh issue edit 42 --add-label "pipeline" --add-label "ready_for_dev"
 |--------|-------------|
 | `looper.sh` | Pipeline commander — scans issues by label, routes to fix/ship |
 | `fix-issue.sh` | Bug fix: `/fix` loop → build check → retry → PR |
-| `ship-issue.sh` | Feature ship: plan → code → PR |
+| `ship-issue.sh` | Feature ship: plan(opus) → code(sonnet) → PR |
 | `ship-issues.sh` | Batch: runs ship-issue.sh for multiple issues |
 | `research.sh` | Research a topic → create GitHub issue |
 | `setup-labels.sh` | Create pipeline labels on GitHub |
 | `looper-profiles.sh` | Custom scheduling profiles |
-| `ship-issue-no-test.sh` | Ship without tests |
+| `ship-issue-no-test.sh` | Thin wrapper: `ship-issue.sh --no-test` |
 | `test-only.sh` | Run `/test` only |
 
 ## Composable Flags
@@ -64,7 +64,8 @@ All flags work on both `fix-issue.sh` and `ship-issue.sh`. `ship-issues.sh` pass
 | `--e2e-only` | E2e test only, no fix/ship |
 | `--frontend-design` | UI review after fix/ship (report only, user-controlled) |
 | `--frontend-design-only` | UI review only |
-| `--model <model>` | Force model (default: sonnet, `--hard` uses opus) |
+| `--no-test` | Skip tests (docs, configs, trivial changes — ship-issue.sh only) |
+| `--model <model>` | Force model override for all phases |
 | `--hard` | `/fix:hard` + opus (fix-issue.sh only) |
 | `--codex` / `--opencode` | Fallback tools (fix-issue.sh only) |
 
@@ -77,8 +78,9 @@ All flags work on both `fix-issue.sh` and `ship-issue.sh`. `ship-issues.sh` pass
 ./fix-issue.sh 42 --auto --worktree --e2e      # full pipeline
 
 # Feature ship
-./ship-issue.sh 42 --auto                      # plan → code → PR
+./ship-issue.sh 42 --auto                      # plan(opus) → code(sonnet) → PR
 ./ship-issue.sh 42 --auto --worktree --e2e     # isolated + verified
+./ship-issue.sh 42 --auto --no-test            # docs/configs (skip tests)
 
 # Batch
 ./ship-issues.sh "39,41,42" --auto --worktree
@@ -128,9 +130,10 @@ Custom profiles: edit `looper-profiles.sh`.
 
 | Task | Model | Why |
 |------|-------|-----|
-| Standard fix/ship | Sonnet | Fast, cheap |
-| `--hard` fix | Opus | Deep reasoning |
-| `--model opus` | Opus | Explicit override |
+| `/plan`, `/debug`, `/brainstorm`, `/frontend-design` | Opus | Reasoning tasks |
+| `/code`, `/fix`, `/cook`, `e2e-test` | Sonnet | Execution tasks |
+| `--hard` fix | Opus | Deep reasoning for complex bugs |
+| `--model opus` | Opus | Explicit override for all phases |
 
 Saves ~60-70% tokens on execution-heavy tasks.
 

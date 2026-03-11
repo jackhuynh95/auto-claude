@@ -12,6 +12,7 @@
 #              ./ship-issue.sh 42 --e2e-only               # e2e test only (no ship)
 #              ./ship-issue.sh 42 --frontend-design        # ship then UI review
 #              ./ship-issue.sh 42 --frontend-design-only   # UI review only
+#              ./ship-issue.sh 42 --no-test                # skip tests (docs, configs)
 #              ./ship-issue.sh 42 --model opus             # force model
 #
 # Requirements:
@@ -32,7 +33,7 @@ set -euo pipefail
 # ------------------------------------------------------------------------------
 
 SCRIPT_DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
-PROJECT_ROOT="$(cd "$SCRIPT_DIR/.." && pwd)"
+PROJECT_ROOT="$(git -C "$SCRIPT_DIR" rev-parse --show-toplevel 2>/dev/null || echo "$SCRIPT_DIR")"
 LOG_FILE="${PROJECT_ROOT}/logs/ship-$(date +%Y%m%d-%H%M%S).log"
 ISSUE_NUM="${1:-}"
 
@@ -43,6 +44,7 @@ E2E_MODE=""
 E2E_ONLY=""
 FRONTEND_DESIGN=""
 FRONTEND_DESIGN_ONLY=""
+NO_TEST=""              # skip tests (docs, configs, trivial changes)
 MODEL_OVERRIDE=""
 
 for arg in "$@"; do
@@ -53,6 +55,7 @@ for arg in "$@"; do
         --e2e-only) E2E_ONLY="true" ;;
         --frontend-design) FRONTEND_DESIGN="true" ;;
         --frontend-design-only) FRONTEND_DESIGN_ONLY="true" ;;
+        --no-test) NO_TEST="true" ;;
         --model) ;; # value handled below
     esac
 done
@@ -65,11 +68,14 @@ for i in "${!ARGS[@]}"; do
     fi
 done
 
-# Determine model: default sonnet for ship, opus available via override
+# Model routing (Issue 07): planning=opus (reasoning), coding=sonnet (execution)
+# --model override applies to ALL phases
 if [[ -n "$MODEL_OVERRIDE" ]]; then
-    MODEL_FLAG="--model $MODEL_OVERRIDE"
+    MODEL_FLAG_PLAN="--model $MODEL_OVERRIDE"
+    MODEL_FLAG_CODE="--model $MODEL_OVERRIDE"
 else
-    MODEL_FLAG="--model sonnet"
+    MODEL_FLAG_PLAN=""                  # opus (default) for planning/reasoning
+    MODEL_FLAG_CODE="--model sonnet"    # sonnet for code execution
 fi
 
 # Cached issue data (populated by fetch_issue_data)
@@ -219,6 +225,7 @@ preflight_check() {
 
 run_claude() {
     local prompt="$1"
+    local model_flag="${2:-$MODEL_FLAG_CODE}"  # default to code model
     local flags=""
 
     # Determine mode
@@ -227,9 +234,9 @@ run_claude() {
         warn "Running in YOLO mode (auto-approve enabled)"
     fi
 
-    info "Executing Claude ($MODEL_FLAG)..."
+    info "Executing Claude ($model_flag)..."
 
-    claude -p "$prompt" $flags $MODEL_FLAG --continue --output-format text 2>&1 | tee -a "$LOG_FILE"
+    claude -p "$prompt" $flags $model_flag --continue --output-format text 2>&1 | tee -a "$LOG_FILE"
 
     return ${PIPESTATUS[0]}
 }
@@ -283,12 +290,12 @@ step_2_planning() {
 
 ${ISSUE_BODY}"
 
-    # Run planning command via Claude
+    # Run planning command via Claude (Opus for reasoning per Issue 07)
     run_claude "/plan:fast Implement GitHub issue #$ISSUE_NUM:
 
 $issue_content
 
-Create implementation plan following project conventions."
+Create implementation plan following project conventions." "$MODEL_FLAG_PLAN"
 
     success "Step 2 complete: Plan created"
 }
@@ -304,8 +311,10 @@ step_3_implementation() {
         exit 1
     fi
 
-    # Run implementation
-    run_claude "/code:auto $plan_path"
+    # Run implementation (skip tests with --no-test)
+    local code_cmd="/code:auto"
+    [[ "$NO_TEST" == "true" ]] && code_cmd="/code:no-test"
+    run_claude "$code_cmd $plan_path" "$MODEL_FLAG_CODE"
 
     success "Step 3 complete: Implementation done"
 }
@@ -416,7 +425,7 @@ step_e2e() {
 
     run_claude "Run e2e-test scenarios to verify fix for issue #$ISSUE_NUM: $ISSUE_TITLE.
 Use the e2e-test skill. Run these scenarios: create-account, purchase-success.
-Report pass/fail."
+Report pass/fail." "$MODEL_FLAG_CODE"
 
     local exit_code=$?
     if [[ $exit_code -eq 0 ]]; then
@@ -435,8 +444,9 @@ Report pass/fail."
 step_frontend_design() {
     info "Frontend Design Review"
 
+    # Opus for design review (reasoning task per Issue 07)
     run_claude "Use the frontend-design skill to review the UI changes for issue #$ISSUE_NUM: $ISSUE_TITLE.
-Take screenshots and report any design issues. Do not auto-fix."
+Take screenshots and report any design issues. Do not auto-fix." "$MODEL_FLAG_PLAN"
 
     comment_issue "" "**Frontend Design Review** for #$ISSUE_NUM completed. Check logs for details."
     success "Frontend design review complete"
@@ -481,12 +491,13 @@ transition_label() {
 main() {
     info "=========================================="
     info "Ship Issue #$ISSUE_NUM"
-    info "Model: ${MODEL_FLAG:-sonnet (default)}"
+    info "Model: plan=${MODEL_FLAG_PLAN:-opus} code=${MODEL_FLAG_CODE:-sonnet}"
     [[ "$WORKTREE_MODE" == "true" ]] && info "Mode: worktree"
     [[ "$E2E_MODE" == "true" ]] && info "Post-ship: e2e"
     [[ "$E2E_ONLY" == "true" ]] && info "Mode: e2e-only"
     [[ "$FRONTEND_DESIGN" == "true" ]] && info "Post-ship: frontend-design"
     [[ "$FRONTEND_DESIGN_ONLY" == "true" ]] && info "Mode: frontend-design-only"
+    [[ "$NO_TEST" == "true" ]] && info "Mode: no-test"
     info "=========================================="
 
     cd "$PROJECT_ROOT"

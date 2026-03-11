@@ -12,8 +12,8 @@
 set -euo pipefail
 
 SCRIPT_DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
-PROJECT_ROOT="$(cd "$SCRIPT_DIR/.." && pwd)"
-PROMPTS_DIR="${SCRIPT_DIR}/prompts"
+PROJECT_ROOT="$(git -C "$SCRIPT_DIR" rev-parse --show-toplevel 2>/dev/null || echo "$SCRIPT_DIR")"
+PROMPTS_DIR="${PROJECT_ROOT}/prompts"
 LOG_FILE="${PROJECT_ROOT}/logs/research-$(date +%Y%m%d-%H%M%S).log"
 TOPIC="${1:-}"
 DESCRIPTION="${2:-}"
@@ -84,7 +84,24 @@ load_prompt() {
     if [[ -f "$prompt_file" ]]; then
         cat "$prompt_file"
     else
-        error "Prompt file not found: $prompt_file"
+        # Inline fallback prompt
+        cat <<'PROMPT'
+Research the following topic thoroughly and provide a structured analysis:
+
+Topic: {{TOPIC}}
+Description: {{DESCRIPTION}}
+
+Analyze the codebase, identify relevant files, and produce:
+1. Current state analysis
+2. Requirements breakdown
+3. Implementation approach
+4. Risk assessment
+
+Output your findings as a GitHub issue body between these markers:
+===ISSUE_BODY_START===
+(issue body here in markdown)
+===ISSUE_BODY_END===
+PROMPT
     fi
 }
 
@@ -106,7 +123,7 @@ run_research() {
     RESEARCH_FILE="${PROJECT_ROOT}/research/${slug}-${today}.md"
 
     # Load prompt template and substitute placeholders
-    local prompt=$(load_prompt "research" | sed "s/{{TOPIC}}/$TOPIC/g" | sed "s/{{DESCRIPTION}}/$DESCRIPTION/g" | sed "s/{{SLUG}}/$slug/g" | sed "s/{{DATE}}/$today/g")
+    local prompt=$(load_prompt "research" | sed "s/{{TOPIC}}/$TOPIC/g" | sed "s/{{DESCRIPTION}}/${DESCRIPTION:-none}/g" | sed "s/{{SLUG}}/$slug/g" | sed "s/{{DATE}}/$today/g")
 
     # Create temp file for Claude output
     local output_file="${PROJECT_ROOT}/logs/research-output-$(date +%Y%m%d-%H%M%S).txt"
