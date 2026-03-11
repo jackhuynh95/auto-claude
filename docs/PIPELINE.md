@@ -107,7 +107,7 @@ done
 
 | Profile | When | Behavior | Limit |
 |---------|------|----------|-------|
-| `overnight` | 10pm–6am, every 2h | `--auto --hard --worktree` on `ready_for_dev` | 5 |
+| `overnight` | 10pm–6am, every 2h | `--auto --hard` on `ready_for_dev` | 5 |
 | `morning` | Once at 7am | Summary + e2e verify `ready_for_test` | 10 |
 | `daytime` | 8am–8pm, every 4h | e2e only on `ready_for_test` | 3 |
 | `continuous` | 24/7, every 1h | Full pipeline scan | 3 |
@@ -123,7 +123,6 @@ All flags work on both `fix-issue.sh` and `ship-issue.sh`.
 | Flag | Description |
 |------|-------------|
 | `--auto` | YOLO mode — skip permission prompts |
-| `--worktree` | Run in isolated `/tmp/fix-issue-<num>` git worktree |
 | `--hard` | Use `/fix:hard` + Opus (complex bugs) |
 | `--e2e` | Run e2e after fix/ship — gates PR on pass |
 | `--e2e-only` | E2e only, no fix/ship (for `ready_for_test` stage) |
@@ -142,8 +141,8 @@ All flags work on both `fix-issue.sh` and `ship-issue.sh`.
 # Complex bug (opus)
 ./fix-issue.sh 42 --auto --hard
 
-# Isolated full pipeline
-./fix-issue.sh 42 --auto --worktree --e2e
+# Bug fix with e2e verification
+./fix-issue.sh 42 --auto --e2e
 
 # Feature with UI
 ./ship-issue.sh 42 --auto --frontend-design
@@ -152,7 +151,7 @@ All flags work on both `fix-issue.sh` and `ship-issue.sh`.
 ./ship-issue.sh 42 --auto --no-test
 
 # Batch multiple issues
-./ship-issues.sh "39,41,42" --auto --worktree
+./ship-issues.sh "39,41,42" --auto
 ```
 
 ---

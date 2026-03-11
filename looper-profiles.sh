@@ -12,7 +12,7 @@
 # Example custom profile:
 # profile_hotfix() {
 #     LABELS="ready_for_dev"
-#     FLAGS="--auto --hard --worktree"
+#     FLAGS="--auto --hard"
 #     LIMIT=1
 #     SUMMARY=""
 # }

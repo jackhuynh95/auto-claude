@@ -130,7 +130,7 @@ load_profile() {
     case "$PROFILE" in
         overnight)
             PROFILE_LABELS="ready_for_dev"
-            PROFILE_FLAGS="--auto --hard --worktree"
+            PROFILE_FLAGS="--auto --hard"
             PROFILE_LIMIT=5
             ;;
         morning)
@@ -146,7 +146,7 @@ load_profile() {
             ;;
         continuous)
             PROFILE_LABELS="ready_for_dev,ready_for_test"
-            PROFILE_FLAGS="--auto --worktree"
+            PROFILE_FLAGS="--auto"
             PROFILE_LIMIT=3
             ;;
         "")
@@ -400,7 +400,7 @@ route_by_label() {
     case "$label" in
         ready_for_dev)
             # Model routing (Issue 07): sonnet default for fixes, opus via --hard label
-            process_issues_by_label "ready_for_dev" "--auto --worktree $extra_flags"
+            process_issues_by_label "ready_for_dev" "--auto $extra_flags"
             ;;
         ready_for_test)
             # Model routing (Issue 07): sonnet for e2e (execution task)
