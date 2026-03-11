@@ -267,16 +267,32 @@ The prompt is run through Claude, which uses the Bash tool to execute the script
 
 Custom profiles: edit `looper-profiles.sh`.
 
+### Issue Type Routing
+
+Looper reads the issue title prefix to dispatch to the right script:
+
+| Title Prefix | Script | Example |
+|-------------|--------|---------|
+| `[BUG]` | `fix-issue.sh` | `[BUG] Cart total wrong` |
+| `[FEATURE]` | `ship-issue.sh` | `[FEATURE] Add wishlist` |
+| `[ENHANCEMENT]` | `ship-issue.sh` | `[ENHANCEMENT] Faster checkout` |
+| `[CHORE]` / `[DOCS]` | `ship-issue.sh` | `[CHORE] Update deps` |
+| `[WONTFIX]` / `[WONTFEAT]` | **Skipped** | Never touched |
+
+**Bugs are always processed before features** (priority per CLAUDE.md).
+
 ### Pipeline Flow
 
 ```
 Issue labeled "pipeline" + "ready_for_dev"
   └─→ looper.sh picks it up
-        └─→ fix-issue.sh <num> --auto --worktree
-              └─→ success: label → "ready_for_test"
+        ├─→ [BUG]  → fix-issue.sh <num> --auto --worktree
+        ├─→ [FEATURE/ENHANCEMENT] → ship-issue.sh <num> --auto --worktree
+        ├─→ [WONTFIX/WONTFEAT] → skipped
+        └─→ success: label → "ready_for_test"
 
 Next scan: "ready_for_test"
-  └─→ fix-issue.sh <num> --e2e-only
+  └─→ --e2e-only
         ├─→ pass:  label → "verified", close issue
         └─→ fail:  label → "ready_for_dev" (re-queue)
 ```

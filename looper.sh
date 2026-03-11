@@ -1,8 +1,10 @@
 #!/bin/bash
 # ==============================================================================
 # Script: looper.sh
-# Description: Scans GitHub issues by pipeline label and dispatches fix-issue.sh
-#              with appropriate flags. The "commander" that /loop calls.
+# Description: Scans GitHub issues by pipeline label and dispatches to the right
+#              script based on issue type. The "commander" that /loop calls.
+#              [BUG] → fix-issue.sh | [FEATURE]/[ENHANCEMENT] → ship-issue.sh
+#              [WONTFIX]/[WONTFEAT] → skipped | Bugs processed first (priority)
 #
 # Usage:
 #   ./looper.sh                          # full scan
@@ -156,6 +158,40 @@ print_summary() {
 }
 
 # ------------------------------------------------------------------------------
+# Issue Type Detection (from CLAUDE.md conventions)
+# ------------------------------------------------------------------------------
+# [BUG]         → fix-issue.sh
+# [FEATURE]     → ship-issue.sh
+# [ENHANCEMENT] → ship-issue.sh
+# [CHORE]       → ship-issue.sh
+# [DOCS]        → ship-issue.sh
+# [WONTFIX]     → SKIP
+# [WONTFEAT]    → SKIP
+
+get_issue_type() {
+    local title="$1"
+    local upper_title=$(echo "$title" | tr '[:lower:]' '[:upper:]')
+
+    if [[ "$upper_title" == *"[WONTFIX]"* ]] || [[ "$upper_title" == *"[WONTFEAT]"* ]]; then
+        echo "skip"
+    elif [[ "$upper_title" == *"[BUG]"* ]]; then
+        echo "bug"
+    else
+        # FEATURE, ENHANCEMENT, CHORE, DOCS, or no prefix → ship
+        echo "ship"
+    fi
+}
+
+get_script_for_type() {
+    local issue_type="$1"
+    case "$issue_type" in
+        bug)  echo "fix-issue.sh" ;;
+        ship) echo "ship-issue.sh" ;;
+        *)    echo "" ;;  # skip
+    esac
+}
+
+# ------------------------------------------------------------------------------
 # Issue Processing
 # ------------------------------------------------------------------------------
 
@@ -166,29 +202,51 @@ process_issues_by_label() {
 
     info "Scanning issues with label: $label"
 
-    local issues=$(gh issue list --label "$label" --label "pipeline" --state open --json number,title --limit "$LIMIT" 2>/dev/null || echo "[]")
-    local count=$(echo "$issues" | jq 'length')
+    # Fetch issues with labels for routing
+    local issues=$(gh issue list --label "$label" --label "pipeline" --state open --json number,title,labels --limit "$((LIMIT * 2))" 2>/dev/null || echo "[]")
 
-    if [[ "$count" -eq 0 ]]; then
-        info "No issues found with label: $label"
+    # Filter out WONTFIX/WONTFEAT and separate bugs vs features
+    local bugs=$(echo "$issues" | jq '[.[] | select(.title | ascii_upcase | contains("[BUG]"))]')
+    local features=$(echo "$issues" | jq '[.[] | select(.title | ascii_upcase | (contains("[BUG]") | not) and (contains("[WONTFIX]") | not) and (contains("[WONTFEAT]") | not))]')
+    local skipped=$(echo "$issues" | jq '[.[] | select(.title | ascii_upcase | (contains("[WONTFIX]") or contains("[WONTFEAT]")))]')
+
+    local skip_count=$(echo "$skipped" | jq 'length')
+    local bug_count=$(echo "$bugs" | jq 'length')
+    local feat_count=$(echo "$features" | jq 'length')
+
+    if [[ "$skip_count" -gt 0 ]]; then
+        warn "Skipping $skip_count WONTFIX/WONTFEAT issue(s)"
+    fi
+
+    if [[ "$bug_count" -eq 0 ]] && [[ "$feat_count" -eq 0 ]]; then
+        info "No actionable issues found with label: $label"
         return 0
     fi
 
-    info "Found $count issue(s) with label: $label"
+    info "Found $bug_count bug(s) + $feat_count feature(s) with label: $label"
 
-    for row in $(echo "$issues" | jq -r '.[] | @base64'); do
+    # Process bugs first (priority per CLAUDE.md), then features
+    local ordered=$(echo "$bugs $features" | jq -s 'add')
+
+    for row in $(echo "$ordered" | jq -r '.[] | @base64'); do
         local num=$(echo "$row" | base64 --decode | jq -r '.number')
         local title=$(echo "$row" | base64 --decode | jq -r '.title')
+        local issue_type=$(get_issue_type "$title")
+        local script=$(get_script_for_type "$issue_type")
 
-        info "Processing #$num: $title"
+        if [[ -z "$script" ]]; then
+            warn "Skipping #$num: $title (WONTFIX/WONTFEAT)"
+            continue
+        fi
+
+        info "Processing #$num ($issue_type → $script): $title"
 
         if [[ "$DRY_RUN" == "true" ]]; then
-            info "[DRY RUN] Would run: ./fix-issue.sh $num $flags"
+            info "[DRY RUN] Would run: ./$script $num $flags"
         else
-            # Dispatch to fix-issue.sh
             cd "$PROJECT_ROOT"
-            bash "${PROJECT_ROOT}/fix-issue.sh" "$num" $flags 2>&1 | tee -a "$LOG_FILE" || {
-                warn "fix-issue.sh failed for #$num"
+            bash "${PROJECT_ROOT}/${script}" "$num" $flags 2>&1 | tee -a "$LOG_FILE" || {
+                warn "$script failed for #$num"
             }
         fi
 
