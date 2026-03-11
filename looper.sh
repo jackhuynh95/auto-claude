@@ -362,12 +362,12 @@ process_issues_by_label() {
         info "Processing #$num ($issue_type → $script ${flag_summary}): $title"
 
         if [[ "$DRY_RUN" == "true" ]]; then
-            info "[DRY RUN] Would run: ./$script $num $issue_flags"
+            info "[DRY RUN] Would run: ${SCRIPT_DIR}/$script $num $issue_flags"
         else
             local issue_start=$(date +%s)
             cd "$PROJECT_ROOT"
 
-            if bash "${PROJECT_ROOT}/${script}" "$num" $issue_flags 2>&1 | tee -a "$LOG_FILE"; then
+            if bash "${SCRIPT_DIR}/${script}" "$num" $issue_flags 2>&1 | tee -a "$LOG_FILE"; then
                 local issue_end=$(date +%s)
                 local issue_duration=$(( issue_end - issue_start ))
                 success "#$num completed (${issue_duration}s)"
