@@ -20,6 +20,9 @@ GitHub Issues (labeled "pipeline" + "ready_for_dev")
 ## Quick Start
 
 ```bash
+# 0. Copy the template to create your CLAUDE.md
+cp CLAUDE.template.md CLAUDE.md
+
 # 1. Setup pipeline labels on GitHub (once)
 ./setup-labels.sh
 
@@ -100,7 +103,7 @@ Labels = Kanban columns. Created by `./setup-labels.sh`.
 
 ## Issue Type Routing
 
-From `CLAUDE.md` conventions:
+From `CLAUDE.template.md` conventions:
 
 | Title Prefix | Script | Priority |
 |-------------|--------|----------|
