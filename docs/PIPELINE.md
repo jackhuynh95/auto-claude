@@ -1,0 +1,194 @@
+# Pipeline Guide
+
+Full reference for the auto-claude autonomous issue pipeline.
+
+---
+
+## How It Works
+
+```
+GitHub Issue
+  └─→ You add labels: "pipeline" + "ready_for_dev"
+        └─→ looper.sh scans on interval (/loop)
+              ├─→ [BUG]              → fix-issue.sh
+              ├─→ [FEATURE/ENHANCE]  → ship-issue.sh
+              ├─→ [WONTFIX/WONTFEAT] → skipped
+              └─→ on success → ready_for_test
+                    ├─→ e2e pass → verified → closed
+                    └─→ e2e fail → ready_for_dev (re-queued)
+```
+
+**Bugs are always processed before features.**
+
+---
+
+## Pipeline Stages (Labels as Kanban)
+
+Run `./setup-labels.sh` once to create all labels on GitHub.
+
+### Stage Labels
+
+| Label | Color | Meaning |
+|-------|-------|---------|
+| `pipeline` | light blue | Opt-in gate — looper only processes issues with this label |
+| `ready_for_dev` | green | Queued for Claude to fix/ship |
+| `ready_for_test` | yellow | Fix shipped, awaiting e2e verification |
+| `shipped` | purple | PR created |
+| `verified` | blue | E2e passed, will be closed |
+| `blocked` | red | Skipped by looper |
+
+### Type Labels (affect looper behavior)
+
+| Label | Color | Looper auto-adds |
+|-------|-------|-----------------|
+| `frontend` | orange | `--frontend-design` — runs UI review after fix |
+| `hard` | dark red | `--hard` — uses Opus model for complex issues |
+
+### Flag Labels (informational)
+
+| Label | Color | Meaning |
+|-------|-------|---------|
+| `needs_design_review` | yellow | Shown in summary — you review manually |
+
+---
+
+## Adding Issues to the Pipeline
+
+```bash
+# Minimal — standard bug or feature
+gh issue edit 42 --add-label "pipeline" --add-label "ready_for_dev"
+
+# Frontend issue — looper auto-runs design review
+gh issue edit 42 --add-label "pipeline" --add-label "ready_for_dev" --add-label "frontend"
+
+# Complex bug — looper uses Opus
+gh issue edit 42 --add-label "pipeline" --add-label "ready_for_dev" --add-label "hard"
+
+# Batch triage
+for num in 42 43 44 45; do
+  gh issue edit $num --add-label "pipeline" --add-label "ready_for_dev"
+done
+```
+
+**Title prefixes also control behavior** — no extra labels needed:
+
+| Title Prefix | Routes to | Extra flag |
+|-------------|-----------|------------|
+| `[BUG] ...` | `fix-issue.sh` | — |
+| `[FEATURE] ...` | `ship-issue.sh` | — |
+| `[ENHANCEMENT] ...` | `ship-issue.sh` | — |
+| `[CHORE] ...` | `ship-issue.sh` | `--no-test` (auto) |
+| `[DOCS] ...` | `ship-issue.sh` | `--no-test` (auto) |
+| `[WONTFIX] ...` | skipped | — |
+| `[WONTFEAT] ...` | skipped | — |
+
+---
+
+## Running the Looper
+
+### Manual
+
+```bash
+./looper.sh                          # full scan (all stages)
+./looper.sh --dry-run                # preview — shows what would run
+./looper.sh --label ready_for_dev   # single stage only
+./looper.sh --limit 3               # cap at 3 issues
+```
+
+### Via `/loop` (Claude Code built-in — repeats on interval)
+
+```bash
+/loop 2h ./looper.sh --profile overnight
+/loop 4h ./looper.sh --profile daytime
+/loop 1h ./looper.sh --profile continuous
+```
+
+### Scheduling Profiles
+
+| Profile | When | Behavior | Limit |
+|---------|------|----------|-------|
+| `overnight` | 10pm–6am, every 2h | `--auto --hard --worktree` on `ready_for_dev` | 5 |
+| `morning` | Once at 7am | Summary + e2e verify `ready_for_test` | 10 |
+| `daytime` | 8am–8pm, every 4h | e2e only on `ready_for_test` | 3 |
+| `continuous` | 24/7, every 1h | Full pipeline scan | 3 |
+
+Custom profiles: add `profile_<name>()` functions to `looper-profiles.sh`.
+
+---
+
+## Composable Flags
+
+All flags work on both `fix-issue.sh` and `ship-issue.sh`.
+
+| Flag | Description |
+|------|-------------|
+| `--auto` | YOLO mode — skip permission prompts |
+| `--worktree` | Run in isolated `/tmp/fix-issue-<num>` git worktree |
+| `--hard` | Use `/fix:hard` + Opus (complex bugs) |
+| `--e2e` | Run e2e after fix/ship — gates PR on pass |
+| `--e2e-only` | E2e only, no fix/ship (for `ready_for_test` stage) |
+| `--frontend-design` | UI review after fix/ship — report only, doesn't gate PR |
+| `--frontend-design-only` | UI review only |
+| `--no-test` | Skip tests — for docs, configs, trivial changes |
+| `--model <model>` | Force model override for all phases |
+| `--codex` / `--opencode` | Fallback tool if Claude fails (`fix-issue.sh` only) |
+
+### Example Combinations
+
+```bash
+# Standard bug fix (sonnet)
+./fix-issue.sh 42 --auto
+
+# Complex bug (opus)
+./fix-issue.sh 42 --auto --hard
+
+# Isolated full pipeline
+./fix-issue.sh 42 --auto --worktree --e2e
+
+# Feature with UI
+./ship-issue.sh 42 --auto --frontend-design
+
+# Docs update (no tests)
+./ship-issue.sh 42 --auto --no-test
+
+# Batch multiple issues
+./ship-issues.sh "39,41,42" --auto --worktree
+```
+
+---
+
+## Model Routing
+
+| Task | Model | Why |
+|------|-------|-----|
+| `/plan`, `/debug`, `/brainstorm`, `/frontend-design` | Opus | Reasoning |
+| `/code`, `/fix`, `/cook`, `e2e-test` | Sonnet | Execution |
+| `--hard` fix | Opus | Complex bug analysis |
+| `--model <override>` | Your choice | All phases |
+
+Saves ~60–70% tokens vs running everything on Opus.
+
+---
+
+## Scripts Reference
+
+| Script | Purpose |
+|--------|---------|
+| `looper.sh` | Commander — scans labels, dispatches to fix/ship |
+| `fix-issue.sh` | Bug fix: `/fix` loop → build check → retry → PR |
+| `ship-issue.sh` | Feature ship: plan(opus) → code(sonnet) → PR |
+| `ship-issue-no-test.sh` | Thin wrapper: `ship-issue.sh --no-test` |
+| `ship-issues.sh` | Batch: runs `ship-issue.sh` for multiple issues |
+| `setup-labels.sh` | Create all pipeline labels on GitHub (run once) |
+| `looper-profiles.sh` | Custom scheduling profiles |
+| `research.sh` | Research topic → create GitHub issue |
+| `test-only.sh` | Run Claude `/test` command standalone |
+
+---
+
+## Requirements
+
+- `claude` — Claude Code CLI, authenticated
+- `gh` — GitHub CLI, authenticated (`gh auth login`)
+- `jq` — JSON processor (`brew install jq`)
+- `git` — with push access to repo
