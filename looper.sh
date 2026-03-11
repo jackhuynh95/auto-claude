@@ -407,16 +407,29 @@ route_by_label() {
             process_issues_by_label "ready_for_test" "--e2e-only --model sonnet $extra_flags"
             ;;
         verified)
-            # Close verified issues
-            info "Closing verified issues..."
+            # Merge linked PR (squash) then close issue
+            info "Processing verified issues..."
             local issues=$(gh issue list --label "verified" --state open --json number --limit "$LIMIT" 2>/dev/null || echo "[]")
             for row in $(echo "$issues" | jq -r '.[] | @base64'); do
                 local num=$(echo "$row" | base64 --decode | jq -r '.number')
                 if [[ "$DRY_RUN" == "true" ]]; then
-                    info "[DRY RUN] Would close issue #$num"
+                    info "[DRY RUN] Would merge PR + close issue #$num"
                 else
-                    gh issue close "$num" 2>/dev/null || warn "Failed to close #$num"
-                    success "Closed #$num"
+                    # Find open PR linked to this issue number
+                    local pr_num=$(gh pr list --state open --json number,title,body \
+                        --jq ".[] | select(.body | contains(\"#${num}\")) | .number" 2>/dev/null | head -1)
+
+                    if [[ -n "$pr_num" ]]; then
+                        info "Merging PR #$pr_num for issue #$num..."
+                        # PR body has "Closes #N" — GitHub auto-closes issue on merge
+                        gh pr merge "$pr_num" --squash --auto --delete-branch 2>/dev/null && \
+                            success "PR #$pr_num merged (squash) — issue #$num will auto-close" || \
+                            warn "PR #$pr_num merge failed — close manually"
+                    else
+                        # No PR found (e.g. fix went directly to main) — close issue manually
+                        gh issue close "$num" 2>/dev/null || warn "Failed to close #$num"
+                        success "Closed #$num"
+                    fi
                 fi
             done
             ;;
