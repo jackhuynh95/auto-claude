@@ -55,9 +55,11 @@ This downloads scripts to `.auto-claude/` and adds it to `.gitignore`.
 | `ship-issues.sh` | `./ship-issues.sh "39,41,42"` | **Batch:** multiple issues sequentially |
 | `ship-issues.sh` | `./ship-issues.sh "39,41" --auto` | Batch YOLO mode |
 | `fix-issue.sh` | `./fix-issue.sh 42` | **Bug fix:** `/fix` loop → PR |
-| `fix-issue.sh` | `./fix-issue.sh 42 --hard` | `/fix:hard` for complex issues |
-| `fix-issue.sh` | `./fix-issue.sh 42 --auto --codex` | With Codex fallback |
-| `fix-issue.sh` | `./fix-issue.sh 42 --auto --opencode` | With OpenCode fallback |
+| `fix-issue.sh` | `./fix-issue.sh 42 --hard` | `/fix:hard` (opus) for complex issues |
+| `fix-issue.sh` | `./fix-issue.sh 42 --auto --worktree --e2e` | Isolated worktree + e2e verify |
+| `looper.sh` | `bash .claude/scripts/looper.sh` | **Pipeline:** scan issues by label → dispatch |
+| `looper.sh` | `bash .claude/scripts/looper.sh --profile overnight` | With scheduling profile |
+| `setup-labels.sh` | `bash .claude/scripts/setup-labels.sh` | Create pipeline labels on GitHub |
 | `ship-issue-no-test.sh` | `./ship-issue-no-test.sh 42` | Skip tests (docs/config) |
 | `test-only.sh` | `./test-only.sh` | Run `/test` via Claude CLI |
 | `test-only.sh` | `./test-only.sh --fix` | YOLO mode |
@@ -133,35 +135,123 @@ Failed:        1 - [42]
 
 ## fix-issue.sh (Bug Fix Workflow)
 
-**For bug issues - uses `/fix` loop with optional `/fix:hard` for complex issues.**
+**For bug issues - uses `/fix` loop with composable flags.**
 
 ```bash
-./fix-issue.sh 42                      # /fix loop
-./fix-issue.sh 42 --auto               # YOLO mode
-./fix-issue.sh 42 --hard               # /fix:hard for complex issues
-./fix-issue.sh 42 --auto --codex       # Codex (GPT-5.2-high) fallback
-./fix-issue.sh 42 --auto --opencode    # OpenCode fallback
+./fix-issue.sh 42                              # /fix loop (sonnet)
+./fix-issue.sh 42 --auto                       # YOLO mode
+./fix-issue.sh 42 --hard                       # /fix:hard (opus)
+./fix-issue.sh 42 --auto --worktree            # isolated git worktree
+./fix-issue.sh 42 --auto --e2e                 # fix then e2e verify
+./fix-issue.sh 42 --e2e-only                   # e2e test only (no fix)
+./fix-issue.sh 42 --frontend-design            # fix then UI review
+./fix-issue.sh 42 --frontend-design-only       # UI review only
+./fix-issue.sh 42 --model opus                 # force model
+./fix-issue.sh 42 --auto --codex               # Codex fallback
+./fix-issue.sh 42 --auto --opencode            # OpenCode fallback
 ```
 
-**Workflow (5 steps):**
+**Composable Flags:**
+
+| Flag | Description |
+|------|-------------|
+| `--auto` | YOLO mode (skip permissions) |
+| `--hard` | Use `/fix:hard` + opus model |
+| `--worktree` | Run fix in isolated git worktree at `/tmp/fix-issue-<num>` |
+| `--e2e` | Run e2e-test after fix, gates PR creation |
+| `--e2e-only` | Skip fix, just run e2e (for `ready_for_test` stage) |
+| `--frontend-design` | Run UI design review after fix (report only) |
+| `--frontend-design-only` | Standalone UI review (no fix) |
+| `--model <model>` | Force specific model (default: sonnet, `--hard` uses opus) |
+| `--codex` | Codex (GPT-5.2-high) fallback after max retries |
+| `--opencode` | OpenCode fallback after max retries |
+
+**Workflow:**
 1. Branch setup (`fix/issue-{num}-{slug}`)
-2. **Fix loop** - runs `/fix` or `/fix:hard`, builds, retries (max 3)
-3. **Fallback** - if errors persist, uses Codex or OpenCode
-4. Commit changes
-5. Create PR + add `shipped` label
+2. Fix loop — runs `/fix` or `/fix:hard`, builds, retries (max 3)
+3. *(optional)* E2E verification — `--e2e` gates PR on pass
+4. *(optional)* Frontend design review — `--frontend-design` reports only
+5. Commit + create PR
+6. Label transition (`ready_for_dev` → `ready_for_test`)
+7. Worktree cleanup (if `--worktree`)
 
-**Modes:**
-- **Default** - uses `/fix` command
-- **--hard** - uses `/fix:hard` for complex/architectural issues
-
-**Key differences from ship-issue.sh:**
-- No planning or coding phases - pure fix loop
-- Retries up to `FIX_MAX_RETRIES` times (default: 3)
-- Supports `--codex` or `--opencode` fallback
+**Model Routing:**
+- Default: `--model sonnet` (fast, cheap)
+- `--hard`: opus (deep reasoning)
+- `--model <name>`: explicit override
 
 **Environment variables:**
 - `FIX_AUTO=true` - same as `--auto` flag
 - `FIX_MAX_RETRIES=3` - max fix attempts before fallback
+
+---
+
+## Looper Pipeline (Automated Issue Processing)
+
+**24/7 unattended pipeline: scan GitHub issues by label → dispatch fix → test → verify → close.**
+
+Labels act as Kanban columns (no separate board needed):
+
+```
+ready_for_dev → ready_for_test → verified → closed
+```
+
+### Setup
+
+```bash
+# Create pipeline labels on GitHub (run once)
+bash .claude/scripts/setup-labels.sh
+
+# Label an issue for the pipeline
+gh issue edit 42 --add-label "pipeline" --add-label "ready_for_dev"
+```
+
+### Usage
+
+```bash
+# Manual run
+bash .claude/scripts/looper.sh
+
+# Scan specific label only
+bash .claude/scripts/looper.sh --label ready_for_dev
+
+# Dry run (scan, don't execute)
+bash .claude/scripts/looper.sh --dry-run
+
+# Limit issues per run
+bash .claude/scripts/looper.sh --limit 3
+
+# With scheduling profile
+bash .claude/scripts/looper.sh --profile overnight
+
+# Via /loop (every 2 hours)
+/loop 2h "bash .claude/scripts/looper.sh"
+```
+
+### Scheduling Profiles
+
+| Profile | Behavior |
+|---------|----------|
+| `overnight` | Every 2h, `ready_for_dev` only, `--auto --hard --worktree`, limit 5 |
+| `morning` | Summary report + `ready_for_test` e2e verification, limit 10 |
+| `daytime` | `ready_for_test` e2e only, limit 3 |
+| `continuous` | All labels, `--auto --worktree`, limit 3 |
+
+Custom profiles: edit `.claude/scripts/looper-profiles.sh`.
+
+### Pipeline Flow
+
+```
+Issue labeled "pipeline" + "ready_for_dev"
+  └─→ looper.sh picks it up
+        └─→ fix-issue.sh <num> --auto --worktree
+              └─→ success: label → "ready_for_test"
+
+Next scan: "ready_for_test"
+  └─→ fix-issue.sh <num> --e2e-only
+        ├─→ pass:  label → "verified", close issue
+        └─→ fail:  label → "ready_for_dev" (re-queue)
+```
 
 ---
 
