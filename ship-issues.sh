@@ -4,13 +4,14 @@
 # Description: Process multiple GitHub issues sequentially via ship-issue.sh
 #              Resets to main branch between each issue for clean isolation
 #
-# Usage:       ./ship-issues.sh <issue-numbers> [--auto]
+# Usage:       ./ship-issues.sh <issue-numbers> [flags...]
 # Example:     ./ship-issues.sh "39,41,42" --auto
+#              ./ship-issues.sh "10,11,12,13" --auto --worktree --e2e
 #              ./ship-issues.sh "10,11,12,13"
 #
 # Flow:        For each issue:
 #              1. git checkout main && git pull
-#              2. ./ship-issue.sh <issue> [--auto]
+#              2. ./ship-issue.sh <issue> [flags...]
 #              3. Repeat until all done
 #
 # Requirements:
@@ -29,7 +30,9 @@ SCRIPT_DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
 PROJECT_ROOT="$(cd "$SCRIPT_DIR/.." && pwd)"
 LOG_FILE="${PROJECT_ROOT}/logs/ship-batch-$(date +%Y%m%d-%H%M%S).log"
 ISSUES_INPUT="${1:-}"
-AUTO_FLAG="${2:-}"
+# Collect all flags after the first arg (issue numbers)
+shift 1 2>/dev/null || true
+PASS_FLAGS="$*"
 
 # Colors
 RED='\033[0;31m'
@@ -131,7 +134,7 @@ process_issue() {
     header "=========================================="
 
     # Run ship-issue.sh
-    if "$SCRIPT_DIR/ship-issue.sh" "$issue" $AUTO_FLAG; then
+    if "$SCRIPT_DIR/ship-issue.sh" "$issue" $PASS_FLAGS; then
         success "Issue #$issue completed successfully"
         SUCCEEDED+=("$issue")
         return 0

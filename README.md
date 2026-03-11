@@ -50,10 +50,10 @@ This downloads scripts to `.auto-claude/` and adds it to `.gitignore`.
 |--------|-------|-------------|
 | `research.sh` | `./research.sh "topic"` | Research → create issue |
 | `research.sh` | `./research.sh "topic" --auto` | Quick issue (YOLO) |
-| `ship-issue.sh` | `./ship-issue.sh 42` | Full: plan → code → test → PR |
-| `ship-issue.sh` | `./ship-issue.sh 42 --auto` | YOLO mode |
+| `ship-issue.sh` | `./ship-issue.sh 42` | Full: plan → code → PR (sonnet) |
+| `ship-issue.sh` | `./ship-issue.sh 42 --auto --worktree --e2e` | YOLO + worktree + e2e verify |
 | `ship-issues.sh` | `./ship-issues.sh "39,41,42"` | **Batch:** multiple issues sequentially |
-| `ship-issues.sh` | `./ship-issues.sh "39,41" --auto` | Batch YOLO mode |
+| `ship-issues.sh` | `./ship-issues.sh "39,41" --auto --worktree` | Batch with all flags passed through |
 | `fix-issue.sh` | `./fix-issue.sh 42` | **Bug fix:** `/fix` loop → PR |
 | `fix-issue.sh` | `./fix-issue.sh 42 --hard` | `/fix:hard` (opus) for complex issues |
 | `fix-issue.sh` | `./fix-issue.sh 42 --auto --worktree --e2e` | Isolated worktree + e2e verify |
@@ -80,17 +80,42 @@ This downloads scripts to `.auto-claude/` and adds it to `.gitignore`.
 
 ## ship-issue.sh Features
 
+```bash
+./ship-issue.sh 42                              # plan → code → PR (sonnet)
+./ship-issue.sh 42 --auto                       # YOLO mode
+./ship-issue.sh 42 --auto --worktree            # isolated git worktree
+./ship-issue.sh 42 --auto --e2e                 # ship then e2e verify
+./ship-issue.sh 42 --e2e-only                   # e2e test only (no ship)
+./ship-issue.sh 42 --frontend-design            # ship then UI review
+./ship-issue.sh 42 --frontend-design-only       # UI review only
+./ship-issue.sh 42 --model opus                 # force opus model
+```
+
+**Composable Flags:**
+
+| Flag | Description |
+|------|-------------|
+| `--auto` | YOLO mode (skip permissions) |
+| `--worktree` | Run in isolated git worktree at `/tmp/ship-issue-<num>` |
+| `--e2e` | Run e2e-test after implementation, gates PR creation |
+| `--e2e-only` | Skip ship, just run e2e (for `ready_for_test` stage) |
+| `--frontend-design` | Run UI design review after ship (report only) |
+| `--frontend-design-only` | Standalone UI review (no ship) |
+| `--model <model>` | Force specific model (default: sonnet) |
+
 **Workflow:**
-1. Branch setup from issue title
+1. Branch setup from issue title (or worktree)
 2. Planning via Claude CLI
 3. Implementation via Claude CLI
-4. **Post reports** - finds `apps/**/*report*.md`, posts to GitHub issue, deletes files
-5. Commit changes (uses `Refs #N` - issue stays open)
-6. Create PR + add `shipped` label
+4. *(optional)* E2E verification — `--e2e` gates PR on pass
+5. *(optional)* Frontend design review — `--frontend-design` reports only
+6. **Post reports** - finds `apps/**/*report*.md`, posts to GitHub issue, deletes files
+7. Commit changes
+8. Create PR + label transition (`ready_for_dev` → `ready_for_test`)
+9. Worktree cleanup (if `--worktree`)
 
 **Optimizations:**
 - Single GitHub API call (cached with `jq`)
-- Issue stays open for manual testing (no `Closes #N`)
 - `shipped` label auto-created if missing (purple #7057ff)
 - Report files posted then cleaned up (not in final commit)
 
@@ -108,13 +133,14 @@ This downloads scripts to `.auto-claude/` and adds it to `.gitignore`.
 
 ```bash
 ./ship-issues.sh "39,41,42" --auto
+./ship-issues.sh "39,41,42" --auto --worktree --e2e   # all flags pass through
 ```
 
 **Flow:**
 1. Parse comma-separated issue numbers
 2. For each issue:
    - `git checkout main && git pull` (clean slate)
-   - Run `./ship-issue.sh <issue> [--auto]`
+   - Run `./ship-issue.sh <issue> [flags...]` (all flags pass through)
    - Track success/failure
 3. Final reset to main
 4. Print summary

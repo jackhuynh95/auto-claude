@@ -4,9 +4,15 @@
 # Description: Automates GitHub issue → Plan → Code → PR workflow via Claude CLI
 #              Designed for CI/CD pipelines and headless automation
 #
-# Usage:       ./ship-issue.sh <issue-number> [--auto]
+# Usage:       ./ship-issue.sh <issue-number> [flags...]
 # Example:     ./ship-issue.sh 42
-#              ./ship-issue.sh 42 --auto  # YOLO mode
+#              ./ship-issue.sh 42 --auto                   # YOLO mode
+#              ./ship-issue.sh 42 --auto --worktree        # isolated git worktree
+#              ./ship-issue.sh 42 --auto --e2e             # ship then e2e verify
+#              ./ship-issue.sh 42 --e2e-only               # e2e test only (no ship)
+#              ./ship-issue.sh 42 --frontend-design        # ship then UI review
+#              ./ship-issue.sh 42 --frontend-design-only   # UI review only
+#              ./ship-issue.sh 42 --model opus             # force model
 #
 # Requirements:
 #   - Claude CLI installed and authenticated
@@ -29,7 +35,42 @@ SCRIPT_DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
 PROJECT_ROOT="$(cd "$SCRIPT_DIR/.." && pwd)"
 LOG_FILE="${PROJECT_ROOT}/logs/ship-$(date +%Y%m%d-%H%M%S).log"
 ISSUE_NUM="${1:-}"
-AUTO_MODE="${2:-}"
+
+# Parse flags
+AUTO_MODE=""
+WORKTREE_MODE=""
+E2E_MODE=""
+E2E_ONLY=""
+FRONTEND_DESIGN=""
+FRONTEND_DESIGN_ONLY=""
+MODEL_OVERRIDE=""
+
+for arg in "$@"; do
+    case "$arg" in
+        --auto) AUTO_MODE="--auto" ;;
+        --worktree) WORKTREE_MODE="true" ;;
+        --e2e) E2E_MODE="true" ;;
+        --e2e-only) E2E_ONLY="true" ;;
+        --frontend-design) FRONTEND_DESIGN="true" ;;
+        --frontend-design-only) FRONTEND_DESIGN_ONLY="true" ;;
+        --model) ;; # value handled below
+    esac
+done
+
+# Parse --model value (needs lookahead)
+ARGS=("$@")
+for i in "${!ARGS[@]}"; do
+    if [[ "${ARGS[$i]}" == "--model" ]] && [[ -n "${ARGS[$((i+1))]:-}" ]]; then
+        MODEL_OVERRIDE="${ARGS[$((i+1))]}"
+    fi
+done
+
+# Determine model: default sonnet for ship, opus available via override
+if [[ -n "$MODEL_OVERRIDE" ]]; then
+    MODEL_FLAG="--model $MODEL_OVERRIDE"
+else
+    MODEL_FLAG="--model sonnet"
+fi
 
 # Cached issue data (populated by fetch_issue_data)
 ISSUE_JSON=""
@@ -186,12 +227,9 @@ run_claude() {
         warn "Running in YOLO mode (auto-approve enabled)"
     fi
 
-    info "Executing Claude command..."
+    info "Executing Claude ($MODEL_FLAG)..."
 
-    # Run Claude with prompt
-    # Using -p for print mode (non-interactive)
-    # --continue to maintain session context
-    claude -p "$prompt" $flags --continue --output-format text 2>&1 | tee -a "$LOG_FILE"
+    claude -p "$prompt" $flags $MODEL_FLAG --continue --output-format text 2>&1 | tee -a "$LOG_FILE"
 
     return ${PIPESTATUS[0]}
 }
@@ -207,13 +245,32 @@ step_1_branch_setup() {
     local slug=$(echo "$ISSUE_TITLE" | tr '[:upper:]' '[:lower:]' | sed 's/[^a-z0-9]/-/g' | sed 's/--*/-/g' | cut -c1-40)
     local branch="${ISSUE_TYPE}/issue-${ISSUE_NUM}-${slug}"
 
-    # Create branch
-    git checkout -b "$branch" 2>/dev/null || {
-        warn "Branch $branch already exists, checking out..."
-        git checkout "$branch"
-    }
+    if [[ "$WORKTREE_MODE" == "true" ]]; then
+        WORKTREE_DIR="/tmp/ship-issue-${ISSUE_NUM}"
+        info "Creating worktree at $WORKTREE_DIR"
 
-    success "Step 1 complete: Branch $branch"
+        # Clean up existing worktree if present
+        if [[ -d "$WORKTREE_DIR" ]]; then
+            warn "Worktree exists, removing..."
+            git worktree remove "$WORKTREE_DIR" --force 2>/dev/null || true
+            git branch -D "$branch" 2>/dev/null || true
+        fi
+
+        git worktree add "$WORKTREE_DIR" -b "$branch" 2>/dev/null || {
+            git branch -D "$branch" 2>/dev/null || true
+            git worktree add "$WORKTREE_DIR" -b "$branch"
+        }
+
+        cd "$WORKTREE_DIR"
+        success "Step 1 complete: Worktree $WORKTREE_DIR (branch: $branch)"
+    else
+        git checkout -b "$branch" 2>/dev/null || {
+            warn "Branch $branch already exists, checking out..."
+            git checkout "$branch"
+        }
+        success "Step 1 complete: Branch $branch"
+    fi
+
     echo "$branch"
 }
 
@@ -344,12 +401,92 @@ EOF
 }
 
 # ------------------------------------------------------------------------------
+# E2E Verification
+# ------------------------------------------------------------------------------
+
+step_e2e() {
+    info "E2E Verification"
+
+    if command -v curl &> /dev/null; then
+        curl -sf http://localhost:9000/health > /dev/null 2>&1 || {
+            warn "Medusa API not running at localhost:9000 - skipping e2e"
+            return 1
+        }
+    fi
+
+    run_claude "Run e2e-test scenarios to verify fix for issue #$ISSUE_NUM: $ISSUE_TITLE.
+Use the e2e-test skill. Run these scenarios: create-account, purchase-success.
+Report pass/fail."
+
+    local exit_code=$?
+    if [[ $exit_code -eq 0 ]]; then
+        success "E2E tests passed"
+        return 0
+    else
+        warn "E2E tests failed"
+        return 1
+    fi
+}
+
+# ------------------------------------------------------------------------------
+# Frontend Design Review
+# ------------------------------------------------------------------------------
+
+step_frontend_design() {
+    info "Frontend Design Review"
+
+    run_claude "Use the frontend-design skill to review the UI changes for issue #$ISSUE_NUM: $ISSUE_TITLE.
+Take screenshots and report any design issues. Do not auto-fix."
+
+    comment_issue "" "**Frontend Design Review** for #$ISSUE_NUM completed. Check logs for details."
+    success "Frontend design review complete"
+}
+
+# ------------------------------------------------------------------------------
+# Worktree Cleanup
+# ------------------------------------------------------------------------------
+
+cleanup_worktree() {
+    if [[ "$WORKTREE_MODE" == "true" ]] && [[ -n "${WORKTREE_DIR:-}" ]]; then
+        info "Cleaning up worktree..."
+        cd "$PROJECT_ROOT"
+        git worktree remove "$WORKTREE_DIR" --force 2>/dev/null || {
+            warn "Failed to remove worktree at $WORKTREE_DIR (manual cleanup needed)"
+        }
+        success "Worktree cleaned up"
+    fi
+}
+
+# ------------------------------------------------------------------------------
+# Label Transitions
+# ------------------------------------------------------------------------------
+
+transition_label() {
+    local remove_label="$1"
+    local add_label="$2"
+
+    if [[ -n "$remove_label" ]]; then
+        gh issue edit "$ISSUE_NUM" --remove-label "$remove_label" 2>/dev/null || true
+    fi
+    if [[ -n "$add_label" ]]; then
+        gh issue edit "$ISSUE_NUM" --add-label "$add_label" 2>/dev/null || true
+    fi
+    info "Label transition: -$remove_label +$add_label"
+}
+
+# ------------------------------------------------------------------------------
 # Main Execution
 # ------------------------------------------------------------------------------
 
 main() {
     info "=========================================="
-    info "🚀 Ship Issue #$ISSUE_NUM"
+    info "Ship Issue #$ISSUE_NUM"
+    info "Model: ${MODEL_FLAG:-sonnet (default)}"
+    [[ "$WORKTREE_MODE" == "true" ]] && info "Mode: worktree"
+    [[ "$E2E_MODE" == "true" ]] && info "Post-ship: e2e"
+    [[ "$E2E_ONLY" == "true" ]] && info "Mode: e2e-only"
+    [[ "$FRONTEND_DESIGN" == "true" ]] && info "Post-ship: frontend-design"
+    [[ "$FRONTEND_DESIGN_ONLY" == "true" ]] && info "Mode: frontend-design-only"
     info "=========================================="
 
     cd "$PROJECT_ROOT"
@@ -357,18 +494,56 @@ main() {
     # Pre-flight
     preflight_check
 
-    # Execute workflow
+    # --- E2E-only mode: skip ship, just test ---
+    if [[ "$E2E_ONLY" == "true" ]]; then
+        if step_e2e; then
+            transition_label "ready_for_test" "verified"
+            success "E2E passed — issue verified"
+        else
+            transition_label "ready_for_test" "ready_for_dev"
+            warn "E2E failed — re-queued for dev"
+        fi
+        return
+    fi
+
+    # --- Frontend-design-only mode ---
+    if [[ "$FRONTEND_DESIGN_ONLY" == "true" ]]; then
+        step_frontend_design
+        return
+    fi
+
+    # --- Standard ship flow ---
     local branch=$(step_1_branch_setup)
     step_2_planning "$branch"
     step_3_implementation
-    step_3b_post_reports  # Post reports then delete before commit
+
+    # E2E after implementation (gates PR creation)
+    if [[ "$E2E_MODE" == "true" ]]; then
+        if ! step_e2e; then
+            warn "E2E failed — skipping PR creation"
+            cleanup_worktree
+            return
+        fi
+    fi
+
+    # Frontend design review (report only, doesn't gate PR)
+    if [[ "$FRONTEND_DESIGN" == "true" ]]; then
+        step_frontend_design
+    fi
+
+    step_3b_post_reports
     step_4_commit
     local pr_url=$(step_5_pr)
+
+    # Transition label after PR
+    transition_label "ready_for_dev" "ready_for_test"
+
+    cleanup_worktree
 
     # Summary
     echo ""
     echo "=========================================="
-    success "🚀 SHIP COMPLETE"
+    success "SHIP COMPLETE"
     echo "=========================================="
     echo "Issue:    #$ISSUE_NUM"
     echo "Branch:   $branch"
