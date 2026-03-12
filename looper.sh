@@ -466,9 +466,14 @@ route_by_label() {
                     if [[ -n "$pr_num" ]]; then
                         info "Merging PR #$pr_num for issue #$num..."
                         # PR body has "Closes #N" — GitHub auto-closes issue on merge
-                        gh pr merge "$pr_num" --squash --auto --delete-branch 2>/dev/null && \
-                            success "PR #$pr_num merged (squash) — issue #$num will auto-close" || \
+                        # Try direct merge first; fall back to --auto if checks are pending
+                        if gh pr merge "$pr_num" --squash --delete-branch 2>/dev/null; then
+                            success "PR #$pr_num merged (squash) — issue #$num will auto-close"
+                        elif gh pr merge "$pr_num" --squash --auto --delete-branch 2>/dev/null; then
+                            success "PR #$pr_num auto-merge enabled — will merge when checks pass"
+                        else
                             warn "PR #$pr_num merge failed — close manually"
+                        fi
                     else
                         # No PR found (e.g. fix went directly to main) — close issue manually
                         gh issue close "$num" 2>/dev/null || warn "Failed to close #$num"
