@@ -123,7 +123,7 @@ All flags work on both `fix-issue.sh` and `ship-issue.sh`.
 | Flag | Description |
 |------|-------------|
 | `--auto` | YOLO mode — skip permission prompts |
-| `--hard` | Use `/fix:hard` + Opus (complex bugs) |
+| `--hard` | Skip `/debug`, use `/fix:hard` + Opus directly (complex bugs) |
 | `--e2e` | Run e2e after fix/ship — gates PR on pass |
 | `--e2e-only` | E2e only, no fix/ship (for `ready_for_test` stage) |
 | `--frontend-design` | UI review after fix/ship — report only, doesn't gate PR |
@@ -156,6 +156,23 @@ All flags work on both `fix-issue.sh` and `ship-issue.sh`.
 
 ---
 
+## Fix Workflow
+
+`fix-issue.sh` runs a 3-phase cycle, retrying up to `FIX_MAX_RETRIES` (default 3):
+
+```
+Standard (default):     /debug (opus) → /fix (sonnet) → /test → retry on fail
+Hard mode (--hard):     /fix:hard (opus) → /test → retry on fail
+```
+
+- **`/debug`** — Read-only root cause analysis. Output feeds into `/fix` as context.
+- **`/fix`** — Intelligent routing (`/fix:fast`, `/fix:hard`, `/fix:types`, etc. based on issue).
+- **`/test`** — Runs tests to verify fix. On failure, test output feeds back into next `/debug` cycle.
+
+If all retries exhausted, falls back to `--codex` or `--opencode` if specified.
+
+---
+
 ## Model Routing
 
 | Task | Model | Why |
@@ -174,7 +191,7 @@ Saves ~60–70% tokens vs running everything on Opus.
 | Script | Purpose |
 |--------|---------|
 | `looper.sh` | Commander — scans labels, dispatches to fix/ship |
-| `fix-issue.sh` | Bug fix: `/fix` loop → build check → retry → PR |
+| `fix-issue.sh` | Bug fix: `/debug` → `/fix` → `/test` cycle → PR (`--hard` skips debug) |
 | `ship-issue.sh` | Feature ship: plan(opus) → code(sonnet) → PR |
 | `ship-issue-no-test.sh` | Thin wrapper: `ship-issue.sh --no-test` |
 | `ship-issues.sh` | Batch: runs `ship-issue.sh` for multiple issues |

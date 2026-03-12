@@ -25,8 +25,8 @@ This downloads scripts to `.auto-claude/` and adds it to `.gitignore`.
 **Usage:**
 ```bash
 .auto-claude/ship-issue.sh 42        # Ship issue #42
-.auto-claude/fix-issue.sh 42         # Fix issue #42
-.auto-claude/fix-issue.sh 42 --hard  # Complex fix (/fix:hard)
+.auto-claude/fix-issue.sh 42         # Fix: /debug → /fix → /test
+.auto-claude/fix-issue.sh 42 --hard  # Fix: /fix:hard → /test (skip debug)
 .auto-claude/ship-issues.sh "1,2,3"  # Batch ship
 ```
 

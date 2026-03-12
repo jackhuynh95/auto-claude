@@ -2,7 +2,7 @@
 # ==============================================================================
 # Script Name: fix-issue.sh
 # Description: Automates GitHub bug fix workflow via Claude CLI
-#              Uses /fix loop with optional --hard mode for complex issues
+#              3-phase loop: /debug → /fix → /test with retry on failure
 #
 # Usage:       ./fix-issue.sh <issue-number> [flags...]
 # Example:     ./fix-issue.sh 42                      # /fix loop
@@ -309,26 +309,51 @@ step_1_branch() {
     echo "$branch"
 }
 
-step_2_fix_loop() {
-    info "Step 2: Fix Loop using $FIX_CMD (max $MAX_RETRIES attempts)"
+step_2_debug() {
+    info "Step 2a: Debug — Investigate root cause"
 
-    local attempt=1
-    local has_errors=true
-
-    # Build issue context
     local issue_context="GitHub Issue #$ISSUE_NUM: $ISSUE_TITLE
 
 $ISSUE_BODY"
 
+    # /debug is read-only analysis — always use opus for reasoning
+    local save_model="$MODEL_FLAG"
+    MODEL_FLAG="$MODEL_FLAG_REASONING"
+
+    local debug_output
+    debug_output=$(run_claude "/debug Investigate this issue and find the root cause. Do NOT implement any fix.
+
+$issue_context" 2>&1) || true
+
+    MODEL_FLAG="$save_model"
+
+    # Store debug analysis for /fix step
+    DEBUG_ANALYSIS="$debug_output"
+    success "Debug analysis complete"
+}
+
+step_2_fix() {
+    info "Step 2b: Fix — Apply the solution"
+
+    local attempt=1
+    local has_errors=true
+
+    # Build context from debug analysis + original issue
+    local fix_context="GitHub Issue #$ISSUE_NUM: $ISSUE_TITLE
+
+$ISSUE_BODY
+
+--- Debug Analysis ---
+${DEBUG_ANALYSIS:-No debug analysis available}"
+
     while [[ "$has_errors" == "true" ]] && [[ $attempt -le $MAX_RETRIES ]]; do
         info "Fix attempt $attempt/$MAX_RETRIES"
 
-        # Run fix command with issue context
-        run_claude "$FIX_CMD Fix this issue:
+        run_claude "$FIX_CMD Fix this issue based on the debug analysis:
 
-$issue_context"
+$fix_context"
 
-        # Run build/tests to check for errors
+        # Run build to check for errors
         local build_output=""
         if [[ -f "package.json" ]]; then
             build_output=$(npm run build 2>&1 || true)
@@ -343,15 +368,16 @@ $issue_context"
             warn "Errors remain after fix attempt $attempt"
 
             local error_snippet=$(echo "$build_output" | grep -i "error\|failed" | head -20)
-            issue_context="Build errors after fix attempt:
+            fix_context="Build errors after fix attempt:
 
 $error_snippet
 
-Original issue: $ISSUE_TITLE"
+Original issue: $ISSUE_TITLE
+Debug analysis: ${DEBUG_ANALYSIS:-N/A}"
 
             ((attempt++))
         else
-            success "No build errors - fix successful"
+            success "No build errors — fix applied"
             has_errors=false
         fi
     done
@@ -364,6 +390,95 @@ Original issue: $ISSUE_TITLE"
         else
             warn "Consider using --codex or --opencode flag for fallback"
         fi
+    fi
+}
+
+step_2_test() {
+    info "Step 2c: Test — Verify the fix"
+
+    local test_output
+    test_output=$(run_claude "/test Verify fix for issue #$ISSUE_NUM: $ISSUE_TITLE
+
+Run all relevant tests. Report pass/fail summary." 2>&1) || true
+
+    # Check test results
+    if echo "$test_output" | grep -qi "all.*pass\|tests.*pass\|success\|0 failed"; then
+        success "Tests passed — fix verified"
+        return 0
+    elif echo "$test_output" | grep -qi "fail\|error"; then
+        warn "Tests reported failures"
+        TEST_FAILURES="$test_output"
+        return 1
+    else
+        info "Test results inconclusive — continuing"
+        return 0
+    fi
+}
+
+step_2_fix_loop() {
+    local cycle=1
+
+    # Initialize shared state
+    DEBUG_ANALYSIS=""
+    TEST_FAILURES=""
+
+    if [[ "$HARD_MODE" == "true" ]]; then
+        # --hard: skip /debug, go straight to /fix:hard → /test loop
+        info "Step 2: Fix:hard → Test workflow (max $MAX_RETRIES cycles)"
+
+        while [[ $cycle -le $MAX_RETRIES ]]; do
+            info "=== Cycle $cycle/$MAX_RETRIES ==="
+
+            # Phase 1: Fix (direct, no debug)
+            step_2_fix
+
+            # Phase 2: Test (verify)
+            if step_2_test; then
+                success "Cycle $cycle: Fix:hard → Test — ALL PASSED"
+                return 0
+            fi
+
+            warn "Cycle $cycle: Tests failed — retrying"
+            ISSUE_BODY="${ISSUE_BODY}
+
+--- Test Failures (cycle $cycle) ---
+${TEST_FAILURES:-See logs}"
+
+            ((cycle++))
+        done
+    else
+        # Standard: /debug → /fix → /test loop
+        info "Step 2: Debug → Fix → Test workflow (max $MAX_RETRIES cycles)"
+
+        while [[ $cycle -le $MAX_RETRIES ]]; do
+            info "=== Cycle $cycle/$MAX_RETRIES ==="
+
+            # Phase 1: Debug (investigate)
+            step_2_debug
+
+            # Phase 2: Fix (apply)
+            step_2_fix
+
+            # Phase 3: Test (verify)
+            if step_2_test; then
+                success "Cycle $cycle: Debug → Fix → Test — ALL PASSED"
+                return 0
+            fi
+
+            warn "Cycle $cycle: Tests failed — retrying with test failure context"
+            ISSUE_BODY="${ISSUE_BODY}
+
+--- Test Failures (cycle $cycle) ---
+${TEST_FAILURES:-See logs}"
+
+            ((cycle++))
+        done
+    fi
+
+    warn "Max cycles reached — some tests may still fail"
+
+    if [[ -n "$FALLBACK_TOOL" ]]; then
+        step_2b_fallback
     fi
 }
 
@@ -455,8 +570,8 @@ EOF
 # E2E Verification (Issue 04)
 # ------------------------------------------------------------------------------
 
-step_2c_e2e() {
-    info "Step 2c: E2E Verification"
+step_e2e() {
+    info "Post-fix: E2E Verification"
 
     # Pre-flight: check if services are running
     if command -v curl &> /dev/null; then
@@ -484,8 +599,8 @@ Report pass/fail."
 # Frontend Design Review (Issue 06)
 # ------------------------------------------------------------------------------
 
-step_2d_frontend_design() {
-    info "Step 2d: Frontend Design Review"
+step_frontend_design() {
+    info "Post-fix: Frontend Design Review"
 
     # Save/restore model flag for reasoning task (Opus per Issue 07)
     local save_model="$MODEL_FLAG"
@@ -553,7 +668,7 @@ main() {
 
     # --- E2E-only mode: skip fix, just test ---
     if [[ "$E2E_ONLY" == "true" ]]; then
-        if step_2c_e2e; then
+        if step_e2e; then
             transition_label "ready_for_test" "verified"
             success "E2E passed — issue verified"
         else
@@ -565,7 +680,7 @@ main() {
 
     # --- Frontend-design-only mode ---
     if [[ "$FRONTEND_DESIGN_ONLY" == "true" ]]; then
-        step_2d_frontend_design
+        step_frontend_design
         return
     fi
 
@@ -576,7 +691,7 @@ main() {
 
     # E2E after fix (gates PR creation)
     if [[ "$E2E_MODE" == "true" ]]; then
-        if ! step_2c_e2e; then
+        if ! step_e2e; then
             warn "E2E failed — skipping PR creation"
             transition_label "ready_for_dev" ""
             cleanup_worktree
@@ -586,7 +701,7 @@ main() {
 
     # Frontend design review after fix (report only, doesn't gate PR)
     if [[ "$FRONTEND_DESIGN" == "true" ]]; then
-        step_2d_frontend_design
+        step_frontend_design
     fi
 
     step_3_post_reports
