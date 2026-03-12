@@ -378,6 +378,10 @@ process_issues_by_label() {
                 warn "#$num failed (${issue_duration}s)"
                 TOTAL_FAILED=$(( TOTAL_FAILED + 1 ))
             fi
+
+            # Safety: always return to main between issues
+            cd "$PROJECT_ROOT"
+            git checkout main 2>/dev/null || true
         fi
 
         TOTAL_PROCESSED=$(( TOTAL_PROCESSED + 1 ))
