@@ -7,15 +7,24 @@ Full reference for the auto-claude autonomous issue pipeline.
 ## How It Works
 
 ```
-GitHub Issue
-  └─→ You add labels: "pipeline" + "ready_for_dev"
-        └─→ looper.sh scans on interval (/loop)
-              ├─→ [BUG]              → fix-issue.sh
-              ├─→ [FEATURE/ENHANCE]  → ship-issue.sh
-              ├─→ [WONTFIX/WONTFEAT] → skipped
-              └─→ on success → ready_for_test
-                    ├─→ e2e pass → verified → closed
-                    └─→ e2e fail → ready_for_dev (re-queued)
+/brainstorm "idea"
+  └─→ discussion & research
+        └─→ "Create GitHub Issue?" → /issue
+              └─→ gh issue create --label "pipeline,ready_for_dev,<type>"
+                    └─→ looper.sh scans on interval (/loop)
+                          ├─→ [BUG]              → fix-issue.sh
+                          ├─→ [FEATURE/ENHANCE]  → ship-issue.sh
+                          ├─→ [WONTFIX/WONTFEAT] → skipped
+                          └─→ on success → ready_for_test
+                                ├─→ e2e pass → verified → closed
+                                └─→ e2e fail → ready_for_dev (re-queued)
+```
+
+You can also skip brainstorming and create issues directly:
+
+```bash
+/issue "Add dark mode toggle"           # interactive — asks type, labels
+/issue plans/reports/brainstorm-*.md    # from brainstorm output
 ```
 
 **Bugs are always processed before features.**
@@ -53,6 +62,17 @@ Run `./setup-labels.sh` once to create all labels on GitHub.
 ---
 
 ## Adding Issues to the Pipeline
+
+### Via `/issue` command (recommended)
+
+```bash
+/issue "Add dark mode toggle"           # interactive — asks type, labels, drafts body
+/issue plans/reports/brainstorm-*.md    # from brainstorm output
+```
+
+The `/issue` command auto-adds `pipeline` + `ready_for_dev` labels and creates a structured issue body that `ship-issue.sh` / `fix-issue.sh` can work with autonomously.
+
+### Via `gh` CLI (manual)
 
 ```bash
 # Minimal — standard bug or feature
@@ -198,6 +218,8 @@ Saves ~60–70% tokens vs running everything on Opus.
 | `ship-issues.sh` | Batch: runs `ship-issue.sh` for multiple issues |
 | `setup-labels.sh` | Create all pipeline labels on GitHub (run once) |
 | `looper-profiles.sh` | Custom scheduling profiles |
+| `/issue` | Create pipeline-ready GitHub issue (interactive or from brainstorm) |
+| `/brainstorm` | Ideation → optionally creates issue via `/issue` |
 | `research.sh` | Research topic → create GitHub issue |
 | `test-only.sh` | Run Claude `/test` command standalone |
 
