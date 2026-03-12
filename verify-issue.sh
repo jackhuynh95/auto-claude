@@ -153,9 +153,19 @@ main() {
     # Run e2e via Claude
     info "Running e2e tests..."
     local exit_code=0
-    claude -p "Run e2e-test scenarios to verify fix for issue #$ISSUE_NUM: $issue_title.
+    local e2e_output
+    e2e_output=$(claude -p "Run e2e-test scenarios to verify fix for issue #$ISSUE_NUM: $issue_title.
 Use the e2e-test skill. Run these scenarios: create-account, purchase-success.
-Report pass/fail." $flags $MODEL_FLAG --continue --output-format text 2>&1 | tee -a "$LOG_FILE" || exit_code=$?
+You MUST actually execute browser tests using agent-browser. Code analysis alone is NOT acceptable.
+Report pass/fail for each scenario." $flags $MODEL_FLAG --continue --output-format text 2>&1) || exit_code=$?
+
+    echo "$e2e_output" | tee -a "$LOG_FILE"
+
+    # Validate tests were actually executed (not just code analysis)
+    if echo "$e2e_output" | grep -qiE "not run|no browser execution|code review only|code analysis|could not.*run|unable to.*run|permission.*denied|skipped.*browser"; then
+        warn "E2E tests were NOT actually executed (agent did code analysis only)"
+        exit_code=1
+    fi
 
     # Transition labels based on result
     if [[ $exit_code -eq 0 ]]; then
