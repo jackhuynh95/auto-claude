@@ -128,6 +128,7 @@ All flags work on both `fix-issue.sh` and `ship-issue.sh`.
 | `--e2e-only` | E2e only, no fix/ship (for `ready_for_test` stage) |
 | `--frontend-design` | UI review after fix/ship — report only, doesn't gate PR |
 | `--frontend-design-only` | UI review only |
+| `--validate` | Run `/plan:validate` after planning — gates implementation |
 | `--no-test` | Skip tests — for docs, configs, trivial changes |
 | `--model <model>` | Force model override for all phases |
 | `--codex` / `--opencode` | Fallback tool if Claude fails (`fix-issue.sh` only) |

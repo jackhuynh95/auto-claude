@@ -54,9 +54,11 @@ Missing either = issue is ignored or misrouted.
 ./fix-issue.sh 42 --auto --worktree         # isolated /tmp/fix-issue-42
 ./fix-issue.sh 42 --auto --e2e              # run e2e, gates PR on pass
 ./fix-issue.sh 42 --auto --worktree --e2e   # full isolated pipeline
+./ship-issue.sh 42 --auto --validate        # validate plan before coding
 ```
 
 `--worktree` — runs in isolated `/tmp/fix-issue-<num>`, auto-cleaned after.
+`--validate` — runs `/plan:validate` after planning, gates implementation.
 `--frontend-design` — UI review only, **manual** (never auto-triggered).
 
 ---

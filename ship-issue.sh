@@ -12,6 +12,7 @@
 #              ./ship-issue.sh 42 --e2e-only               # e2e test only (no ship)
 #              ./ship-issue.sh 42 --frontend-design        # ship then UI review
 #              ./ship-issue.sh 42 --frontend-design-only   # UI review only
+#              ./ship-issue.sh 42 --validate               # validate plan before coding
 #              ./ship-issue.sh 42 --no-test                # skip tests (docs, configs)
 #              ./ship-issue.sh 42 --model opus             # force model
 #
@@ -45,6 +46,7 @@ E2E_ONLY=""
 FRONTEND_DESIGN=""
 FRONTEND_DESIGN_ONLY=""
 NO_TEST=""              # skip tests (docs, configs, trivial changes)
+VALIDATE_PLAN=""        # run /plan:validate after planning
 MODEL_OVERRIDE=""
 
 for arg in "$@"; do
@@ -56,6 +58,7 @@ for arg in "$@"; do
         --frontend-design) FRONTEND_DESIGN="true" ;;
         --frontend-design-only) FRONTEND_DESIGN_ONLY="true" ;;
         --no-test) NO_TEST="true" ;;
+        --validate) VALIDATE_PLAN="true" ;;
         --model) ;; # value handled below
     esac
 done
@@ -300,6 +303,33 @@ Create implementation plan following project conventions." "$MODEL_FLAG_PLAN"
     success "Step 2 complete: Plan created"
 }
 
+step_2b_validate() {
+    info "Step 2b: Plan Validation"
+
+    # Find latest plan (same pattern as step_3)
+    local plan_path=$(find ./plans -name "plan.md" -type f -exec stat -f "%m %N" {} \; 2>/dev/null | sort -rn | head -1 | cut -d' ' -f2-)
+
+    if [[ -z "$plan_path" ]]; then
+        error "No plan found for validation."
+        exit 1
+    fi
+
+    local plan_dir=$(dirname "$plan_path")
+    info "Validating plan: $plan_dir"
+
+    # Run /plan:validate via Claude (opus for reasoning)
+    run_claude "/plan:validate $plan_dir" "$MODEL_FLAG_PLAN"
+
+    local exit_code=$?
+    if [[ $exit_code -ne 0 ]]; then
+        error "Plan validation failed — aborting implementation."
+        cleanup_worktree
+        exit 1
+    fi
+
+    success "Step 2b complete: Plan validated"
+}
+
 step_3_implementation() {
     info "Step 3: Implementation Phase"
 
@@ -498,6 +528,7 @@ main() {
     [[ "$FRONTEND_DESIGN" == "true" ]] && info "Post-ship: frontend-design"
     [[ "$FRONTEND_DESIGN_ONLY" == "true" ]] && info "Mode: frontend-design-only"
     [[ "$NO_TEST" == "true" ]] && info "Mode: no-test"
+    [[ "$VALIDATE_PLAN" == "true" ]] && info "Post-plan: validate"
     info "=========================================="
 
     cd "$PROJECT_ROOT"
@@ -526,6 +557,12 @@ main() {
     # --- Standard ship flow ---
     local branch=$(step_1_branch_setup)
     step_2_planning "$branch"
+
+    # Validate plan (optional gate)
+    if [[ "$VALIDATE_PLAN" == "true" ]]; then
+        step_2b_validate
+    fi
+
     step_3_implementation
 
     # E2E after implementation (gates PR creation)
