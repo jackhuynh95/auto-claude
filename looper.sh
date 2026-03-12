@@ -428,7 +428,7 @@ route_by_label() {
                         local issue_start=$(date +%s)
                         cd "$PROJECT_ROOT"
 
-                        if bash "${SCRIPT_DIR}/verify-issue.sh" "$num" --model sonnet $extra_flags 2>&1 | tee -a "$LOG_FILE"; then
+                        if bash "${SCRIPT_DIR}/verify-issue.sh" "$num" --auto --model sonnet $extra_flags 2>&1 | tee -a "$LOG_FILE"; then
                             local issue_end=$(date +%s)
                             success "#$num verified ($(( issue_end - issue_start ))s)"
                             TOTAL_SUCCEEDED=$(( TOTAL_SUCCEEDED + 1 ))

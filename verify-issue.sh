@@ -146,18 +146,15 @@ main() {
         }
     fi
 
-    # Build claude flags
+    # Build claude flags (same pattern as fix-issue.sh / ship-issue.sh)
     local flags=""
     [[ "$AUTO_MODE" == "true" ]] && flags="--dangerously-skip-permissions"
 
-    # Run e2e via Claude
+    # Run e2e via /test:e2e slash command
     info "Running e2e tests..."
     local exit_code=0
     local e2e_output
-    e2e_output=$(claude -p "Run e2e-test scenarios to verify fix for issue #$ISSUE_NUM: $issue_title.
-Use the e2e-test skill. Run these scenarios: create-account, purchase-success.
-You MUST actually execute browser tests using agent-browser. Code analysis alone is NOT acceptable.
-Report pass/fail for each scenario." $flags $MODEL_FLAG --continue --output-format text 2>&1) || exit_code=$?
+    e2e_output=$(claude -p "/test:e2e Verify fix for issue #$ISSUE_NUM: $issue_title. Run scenarios: create-account, purchase-success." $flags $MODEL_FLAG --continue --output-format text 2>&1) || exit_code=$?
 
     echo "$e2e_output" | tee -a "$LOG_FILE"
 
