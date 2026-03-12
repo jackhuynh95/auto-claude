@@ -39,15 +39,27 @@ rm -rf "$INSTALL_DIR/logs"
 chmod +x "$INSTALL_DIR"/*.sh 2>/dev/null || true
 
 # Install .claude/ (ClaudeKit: agents, commands, skills, hooks, rules, etc.)
-# Merge into project's .claude/ — existing files are NOT overwritten
 if [[ -d "$INSTALL_DIR/.claude" ]]; then
     echo "Installing .claude/ (ClaudeKit)..."
     mkdir -p .claude
-    # Copy without overwriting existing user files
-    cp -rn "$INSTALL_DIR/.claude/." .claude/
-    # settings.local.json is user-specific — remove the copied version
-    rm -f .claude/settings.local.json
-    echo "Merged .claude/ into project"
+
+    # Auto-claude managed dirs — always overwrite so skills/commands/agents stay up-to-date
+    for dir in skills commands agents rules scripts hooks output-styles; do
+        if [[ -d "$INSTALL_DIR/.claude/$dir" ]]; then
+            cp -r "$INSTALL_DIR/.claude/$dir" .claude/
+        fi
+    done
+
+    # Misc managed files (statusline helpers, metadata)
+    for file in statusline.cjs statusline.ps1 statusline.sh metadata.json; do
+        [[ -f "$INSTALL_DIR/.claude/$file" ]] && cp "$INSTALL_DIR/.claude/$file" .claude/
+    done
+
+    # settings.json — copy only if not present (user may have customized)
+    cp -n "$INSTALL_DIR/.claude/settings.json" .claude/settings.json 2>/dev/null || true
+
+    # settings.local.json is user-specific — never copy
+    echo "Installed .claude/ (ClaudeKit)"
 fi
 
 # Bootstrap CLAUDE.md if missing
