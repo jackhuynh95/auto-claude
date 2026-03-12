@@ -12,12 +12,15 @@ Full reference for the auto-claude autonomous issue pipeline.
         └─→ "Create GitHub Issue?" → /issue
               └─→ gh issue create --label "pipeline,ready_for_dev,<type>"
                     └─→ looper.sh scans on interval (/loop)
-                          ├─→ [BUG]              → fix-issue.sh
-                          ├─→ [FEATURE/ENHANCE]  → ship-issue.sh
-                          ├─→ [WONTFIX/WONTFEAT] → skipped
-                          └─→ on success → ready_for_test
-                                ├─→ e2e pass → verified → closed
-                                └─→ e2e fail → ready_for_dev (re-queued)
+                          ├─→ ready_for_dev:
+                          │     ├─→ [BUG]              → fix-issue.sh
+                          │     ├─→ [FEATURE/ENHANCE]  → ship-issue.sh
+                          │     └─→ [WONTFIX/WONTFEAT] → skipped
+                          │           └─→ on success → ready_for_test
+                          └─→ ready_for_test:
+                                └─→ verify-issue.sh (e2e)
+                                      ├─→ pass → verified → closed
+                                      └─→ fail → ready_for_dev (re-queued)
 ```
 
 You can also skip brainstorming and create issues directly:
@@ -145,7 +148,7 @@ All flags work on both `fix-issue.sh` and `ship-issue.sh`.
 | `--auto` | YOLO mode — skip permission prompts |
 | `--hard` | Skip `/debug`, use `/fix:hard` + Opus directly (complex bugs) |
 | `--e2e` | Run e2e after fix/ship — gates PR on pass |
-| `--e2e-only` | E2e only, no fix/ship (for `ready_for_test` stage) |
+| `--e2e-only` | Delegates to `verify-issue.sh` (for `ready_for_test` stage) |
 | `--frontend-design` | UI review after fix/ship — report only, doesn't gate PR |
 | `--frontend-design-only` | UI review only |
 | `--validate` | Run `/plan:validate` after planning — gates implementation |
@@ -211,17 +214,18 @@ Saves ~60–70% tokens vs running everything on Opus.
 
 | Script | Purpose |
 |--------|---------|
-| `looper.sh` | Commander — scans labels, dispatches to fix/ship |
+| `looper.sh` | Commander — scans labels, dispatches to fix/ship/verify |
 | `fix-issue.sh` | Bug fix: `/debug` → `/fix` → `/test` cycle → PR (`--hard` skips debug) |
 | `ship-issue.sh` | Feature ship: plan(opus) → code(sonnet) → PR |
+| `verify-issue.sh` | E2E verify: checkout PR branch → e2e test → label transition |
 | `ship-issue-no-test.sh` | Thin wrapper: `ship-issue.sh --no-test` |
 | `ship-issues.sh` | Batch: runs `ship-issue.sh` for multiple issues |
 | `setup-labels.sh` | Create all pipeline labels on GitHub (run once) |
 | `looper-profiles.sh` | Custom scheduling profiles |
+| `test-only.sh` | Run Claude `/test` command standalone |
 | `/issue` | Create pipeline-ready GitHub issue (interactive or from brainstorm) |
 | `/brainstorm` | Ideation → optionally creates issue via `/issue` |
 | `research.sh` | Research topic → create GitHub issue |
-| `test-only.sh` | Run Claude `/test` command standalone |
 
 ---
 

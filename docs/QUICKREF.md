@@ -83,7 +83,9 @@ done
 ## Pipeline Stages (Label Flow)
 
 ```
-ready_for_dev → ready_for_test → shipped → verified → closed
+ready_for_dev → fix-issue.sh / ship-issue.sh → ready_for_test
+ready_for_test → verify-issue.sh (e2e) → verified → closed
+                                       → ready_for_dev (fail, re-queued)
 ```
 
 ---

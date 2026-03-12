@@ -3,7 +3,8 @@
 Autonomous issue processing pipeline powered by Claude Code CLI + [ClaudeKit Engineer](https://github.com/claudekit).
 
 ```
-/brainstorm → /issue → looper.sh → fix-issue.sh / ship-issue.sh → PR → e2e → verified
+/brainstorm → /issue → looper.sh → fix-issue.sh / ship-issue.sh → PR
+                                  └─→ verify-issue.sh → e2e → verified
 ```
 
 **[→ Full Pipeline Guide](docs/PIPELINE.md)**
@@ -28,6 +29,7 @@ This downloads scripts to `.auto-claude/` and adds it to `.gitignore`.
 .auto-claude/fix-issue.sh 42 --hard       # Fix: /fix:hard → /test (skip debug)
 .auto-claude/ship-issue.sh 42             # Ship feature: plan(opus) → code(sonnet) → PR
 .auto-claude/ship-issue.sh 42 --validate  # Validate plan before coding
+.auto-claude/verify-issue.sh 42           # E2E verify a ready_for_test issue
 .auto-claude/ship-issues.sh "1,2,3"       # Batch ship
 ```
 

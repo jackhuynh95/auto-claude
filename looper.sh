@@ -135,13 +135,13 @@ load_profile() {
             ;;
         morning)
             PROFILE_LABELS="ready_for_test"
-            PROFILE_FLAGS="--e2e-only"
+            PROFILE_FLAGS=""  # ready_for_test routes to verify-issue.sh directly
             PROFILE_LIMIT=10
             PROFILE_SUMMARY="true"
             ;;
         daytime)
             PROFILE_LABELS="ready_for_test"
-            PROFILE_FLAGS="--e2e-only"
+            PROFILE_FLAGS=""  # ready_for_test routes to verify-issue.sh directly
             PROFILE_LIMIT=3
             ;;
         continuous)
@@ -407,8 +407,48 @@ route_by_label() {
             process_issues_by_label "ready_for_dev" "--auto $extra_flags"
             ;;
         ready_for_test)
-            # Model routing (Issue 07): sonnet for e2e (execution task)
-            process_issues_by_label "ready_for_test" "--e2e-only --model sonnet $extra_flags"
+            # E2E verification — no fix/ship needed, route directly to verify-issue.sh
+            info "Processing ready_for_test issues..."
+            local test_issues=$(gh issue list --label "ready_for_test" --label "pipeline" --state open --json number,title --limit "$LIMIT" 2>/dev/null || echo "[]")
+            local test_count=$(echo "$test_issues" | jq 'length')
+
+            if [[ "$test_count" -eq 0 ]]; then
+                info "No issues found with label: ready_for_test"
+            else
+                info "Found $test_count issue(s) to verify"
+                for row in $(echo "$test_issues" | jq -r '.[] | @base64'); do
+                    local num=$(echo "$row" | base64 --decode | jq -r '.number')
+                    local title=$(echo "$row" | base64 --decode | jq -r '.title')
+
+                    info "Verifying #$num: $title"
+
+                    if [[ "$DRY_RUN" == "true" ]]; then
+                        info "[DRY RUN] Would run: verify-issue.sh $num --model sonnet $extra_flags"
+                    else
+                        local issue_start=$(date +%s)
+                        cd "$PROJECT_ROOT"
+
+                        if bash "${SCRIPT_DIR}/verify-issue.sh" "$num" --model sonnet $extra_flags 2>&1 | tee -a "$LOG_FILE"; then
+                            local issue_end=$(date +%s)
+                            success "#$num verified ($(( issue_end - issue_start ))s)"
+                            TOTAL_SUCCEEDED=$(( TOTAL_SUCCEEDED + 1 ))
+                        else
+                            local issue_end=$(date +%s)
+                            warn "#$num verification failed ($(( issue_end - issue_start ))s)"
+                            TOTAL_FAILED=$(( TOTAL_FAILED + 1 ))
+                        fi
+
+                        cd "$PROJECT_ROOT"
+                        git checkout main 2>/dev/null || true
+                    fi
+
+                    TOTAL_PROCESSED=$(( TOTAL_PROCESSED + 1 ))
+                    if [[ $TOTAL_PROCESSED -ge $LIMIT ]]; then
+                        info "Reached limit ($LIMIT) — stopping"
+                        break
+                    fi
+                done
+            fi
             ;;
         verified)
             # Merge linked PR (squash) then close issue

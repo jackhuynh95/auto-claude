@@ -245,32 +245,6 @@ run_claude() {
 }
 
 # ------------------------------------------------------------------------------
-# PR Branch Checkout (for e2e-only / ready_for_test)
-# ------------------------------------------------------------------------------
-
-checkout_pr_branch() {
-    local pr_branch
-    pr_branch=$(gh pr list --state open --json headRefName,body \
-        --jq ".[] | select(.body | contains(\"#${ISSUE_NUM}\")) | .headRefName" 2>/dev/null | head -1)
-
-    if [[ -z "$pr_branch" ]]; then
-        pr_branch=$(gh pr list --state open --json headRefName,title \
-            --jq ".[] | select(.title | contains(\"#${ISSUE_NUM}\")) | .headRefName" 2>/dev/null | head -1)
-    fi
-
-    if [[ -n "$pr_branch" ]]; then
-        info "Checking out PR branch: $pr_branch"
-        git fetch origin "$pr_branch" 2>/dev/null || true
-        git checkout "$pr_branch" 2>/dev/null || \
-            git checkout -b "$pr_branch" "origin/$pr_branch" 2>/dev/null || true
-        return 0
-    else
-        warn "No PR branch found for issue #$ISSUE_NUM — testing on current branch"
-        return 1
-    fi
-}
-
-# ------------------------------------------------------------------------------
 # Workflow Steps
 # ------------------------------------------------------------------------------
 
@@ -574,18 +548,11 @@ main() {
     # Pre-flight
     preflight_check
 
-    # --- E2E-only mode: checkout PR branch, then test ---
+    # --- E2E-only mode: delegate to verify-issue.sh ---
     if [[ "$E2E_ONLY" == "true" ]]; then
-        checkout_pr_branch
-        if step_e2e; then
-            transition_label "ready_for_test" "verified"
-            success "E2E passed — issue verified"
-        else
-            transition_label "ready_for_test" "ready_for_dev"
-            warn "E2E failed — re-queued for dev"
-        fi
-        git checkout main 2>/dev/null || true
-        return
+        exec bash "${SCRIPT_DIR}/verify-issue.sh" "$ISSUE_NUM" \
+            $([[ "$AUTO_MODE" == "--auto" ]] && echo "--auto") \
+            $([[ -n "$MODEL_OVERRIDE" ]] && echo "--model $MODEL_OVERRIDE")
     fi
 
     # --- Frontend-design-only mode ---
