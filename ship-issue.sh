@@ -452,11 +452,12 @@ step_e2e() {
         return 1
     fi
 
-    # Guard: Medusa API must be running
-    curl -sf http://localhost:9000/health > /dev/null 2>&1 || {
-        error "Medusa API not running at localhost:9000 — cannot run e2e tests"
-        return 1
-    }
+    if command -v curl &> /dev/null; then
+        curl -sf http://localhost:9000/health > /dev/null 2>&1 || {
+            warn "Medusa API not running at localhost:9000 - skipping e2e"
+            return 1
+        }
+    fi
 
     run_claude "Run e2e-test scenarios to verify fix for issue #$ISSUE_NUM: $ISSUE_TITLE.
 Use the e2e-test skill. Run these scenarios: create-account, purchase-success.
