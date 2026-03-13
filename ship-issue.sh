@@ -524,6 +524,21 @@ transition_label() {
         gh issue edit "$ISSUE_NUM" --add-label "$add_label" 2>/dev/null || true
     fi
     info "Label transition: -$remove_label +$add_label"
+
+    # Wait for GitHub API to propagate label changes (eventual consistency)
+    # Max 3 retries × 2s = 6s ceiling to avoid stalling the pipeline
+    if [[ -n "$remove_label" ]]; then
+        for i in 1 2 3; do
+            sleep 2
+            local current_labels=$(gh issue view "$ISSUE_NUM" --json labels --jq '.labels[].name' 2>/dev/null || echo "")
+            if ! echo "$current_labels" | grep -qx "$remove_label"; then
+                info "Label propagation confirmed (${i}x2s)"
+                return 0
+            fi
+            warn "Label not yet propagated, retrying... ($i/3)"
+        done
+        warn "Label propagation not confirmed after 6s — proceeding anyway"
+    fi
 }
 
 # ------------------------------------------------------------------------------
