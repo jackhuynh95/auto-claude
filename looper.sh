@@ -220,6 +220,30 @@ print_run_results() {
 }
 
 # ------------------------------------------------------------------------------
+# Log Transformer — batch rename *.log → *.md at end of cycle
+# .md renders nicely on GitHub, OS previews, and Slack shares
+# ------------------------------------------------------------------------------
+
+transform_logs() {
+    local count=0
+    for f in "$LOG_DIR"/*.log; do
+        [[ -f "$f" ]] || continue
+        # Skip the current looper log (still being written via tee)
+        [[ "$f" == "$LOG_FILE" ]] && continue
+        mv "$f" "${f%.log}.md"
+        ((count++))
+    done
+    # Rename current looper log last (tee holds file handle, safe on Unix)
+    if [[ -f "$LOG_FILE" ]]; then
+        local new_log="${LOG_FILE%.log}.md"
+        mv "$LOG_FILE" "$new_log"
+        LOG_FILE="$new_log"
+        ((count++))
+    fi
+    [[ $count -gt 0 ]] && info "Transformed $count log file(s) to .md"
+}
+
+# ------------------------------------------------------------------------------
 # Issue Type Detection (from CLAUDE.md conventions)
 # ------------------------------------------------------------------------------
 # [BUG]         → fix-issue.sh
@@ -539,6 +563,9 @@ main() {
     # Print results
     print_run_results
     print_summary
+
+    # Transform all .log files to .md for better readability
+    transform_logs
 
     success "Looper scan complete"
     info "Log: $LOG_FILE"
