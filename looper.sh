@@ -12,15 +12,19 @@
 #   [DOCS]/[CHORE]     → auto-adds --no-test (skip tests)
 #
 # Usage:
-#   ./looper.sh                          # full scan
+#   ./looper.sh                          # full scan (all labels)
 #   ./looper.sh --label ready_for_dev    # single label
+#   ./looper.sh --label "ready_for_dev,ready_for_test"  # multiple labels
 #   ./looper.sh --dry-run                # scan only
 #   ./looper.sh --limit 3               # cap per run
 #   ./looper.sh --profile overnight      # scheduling profile
+#   ./looper.sh --read-slack             # read Slack → brainstorm → issue before pipeline
+#   ./looper.sh --read-slack --label ready_for_dev  # Slack + single label
 #
 # Via /loop (Claude Code built-in, runs prompt on interval):
 #   /loop 2h ./looper.sh
 #   /loop 2h ./looper.sh --profile overnight
+#   /loop 4h ./looper.sh --read-slack --profile morning
 # ==============================================================================
 
 set -euo pipefail
@@ -36,6 +40,7 @@ DRY_RUN=""
 LIMIT=10
 FILTER_LABEL=""
 PROFILE=""
+READ_SLACK=""           # --read-slack: scan Slack before pipeline run
 
 # Run results tracking
 TOTAL_PROCESSED=0
@@ -66,6 +71,7 @@ for i in "${!ARGS[@]}"; do
         --profile)
             PROFILE="${ARGS[$((i+1))]:-}"
             ;;
+        --read-slack) READ_SLACK="true" ;;
     esac
 done
 
@@ -244,6 +250,56 @@ transform_logs() {
 }
 
 # ------------------------------------------------------------------------------
+# Slack Reader + Report (new scripts integration)
+# ------------------------------------------------------------------------------
+
+# Read tasks from Slack and create issues via brainstorm-issue.sh
+read_slack_tasks() {
+    if [[ ! -f "${SCRIPT_DIR}/read-slack.sh" ]]; then
+        warn "read-slack.sh not found — skipping Slack read"
+        return
+    fi
+
+    info "Reading tasks from Slack..."
+
+    if [[ "$DRY_RUN" == "true" ]]; then
+        info "[DRY RUN] Would run: read-slack.sh --pipe | brainstorm-issue.sh --stdin --auto"
+        return
+    fi
+
+    local tasks=$(bash "${SCRIPT_DIR}/read-slack.sh" --pipe 2>/dev/null || echo "")
+
+    if [[ -z "$tasks" ]]; then
+        info "No tasks found from Slack"
+        return
+    fi
+
+    local count=$(echo "$tasks" | wc -l | xargs)
+    info "Found $count task(s) from Slack"
+
+    # Feed each task into brainstorm-issue.sh
+    while IFS= read -r task; do
+        [[ -z "$task" ]] && continue
+        info "Creating issue from: ${task:0:60}..."
+        if bash "${SCRIPT_DIR}/brainstorm-issue.sh" "$task" --auto 2>&1 | tee -a "$LOG_FILE"; then
+            success "Issue created from Slack task"
+        else
+            warn "Failed to create issue from: ${task:0:60}"
+        fi
+    done <<< "$tasks"
+}
+
+# Post report to Slack after fix/ship/verify
+report_issue() {
+    local num="$1"
+    if [[ ! -f "${SCRIPT_DIR}/report-issue.sh" ]]; then
+        return
+    fi
+    info "Reporting #$num to Slack..."
+    bash "${SCRIPT_DIR}/report-issue.sh" "$num" --clipboard 2>&1 | tee -a "$LOG_FILE" || true
+}
+
+# ------------------------------------------------------------------------------
 # Issue Type Detection (from CLAUDE.md conventions)
 # ------------------------------------------------------------------------------
 # [BUG]         → fix-issue.sh
@@ -396,6 +452,8 @@ process_issues_by_label() {
                 local issue_duration=$(( issue_end - issue_start ))
                 success "#$num completed (${issue_duration}s)"
                 TOTAL_SUCCEEDED=$(( TOTAL_SUCCEEDED + 1 ))
+                # Post-fix/ship: report to Slack
+                report_issue "$num"
             else
                 local issue_end=$(date +%s)
                 local issue_duration=$(( issue_end - issue_start ))
@@ -493,6 +551,7 @@ route_by_label() {
                         # Try direct merge first; fall back to --auto if checks are pending
                         if gh pr merge "$pr_num" --squash --delete-branch 2>/dev/null; then
                             success "PR #$pr_num merged (squash) — issue #$num will auto-close"
+                            report_issue "$num"
                         elif gh pr merge "$pr_num" --squash --auto --delete-branch 2>/dev/null; then
                             success "PR #$pr_num auto-merge enabled — will merge when checks pass"
                         else
@@ -502,6 +561,7 @@ route_by_label() {
                         # No PR found (e.g. fix went directly to main) — close issue manually
                         gh issue close "$num" 2>/dev/null || warn "Failed to close #$num"
                         success "Closed #$num"
+                        report_issue "$num"
                     fi
                 fi
             done
@@ -543,6 +603,11 @@ main() {
     # Print summary if profile requests it or morning profile
     if [[ "$PROFILE_SUMMARY" == "true" ]]; then
         print_summary
+    fi
+
+    # Phase 0: Read Slack for new tasks (if --read-slack)
+    if [[ "$READ_SLACK" == "true" ]]; then
+        read_slack_tasks
     fi
 
     # Route based on filter or scan all pipeline labels
