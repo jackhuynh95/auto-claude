@@ -1,9 +1,9 @@
 #!/bin/bash
 # ==============================================================================
 # Script: brainstorm-issue.sh
-# Description: Reads a task description (from arg, file, or stdin), runs Claude
-#              /brainstorm to ideate, then creates a pipeline-ready GitHub issue.
-#              Bridges the gap between "idea" and "ready_for_dev".
+# Description: Runs claude /brainstorm inline, then claude /issue to create a
+#              pipeline-ready GitHub issue. Same pattern as ship-issue uses
+#              /code:auto and report-issue uses /slack-report.
 #
 # Usage:       ./brainstorm-issue.sh "Add wishlist plugin"
 #              ./brainstorm-issue.sh --file task.md
@@ -13,13 +13,11 @@
 #              ./brainstorm-issue.sh "Add wishlist" --auto
 #              ./brainstorm-issue.sh "Add wishlist" --skip-brainstorm
 #
-# Designed to be the entry point for the agent swarm workflow:
-#   Slack read → brainstorm-issue.sh → looper.sh → fix/ship → report-issue.sh
+# Flow:  claude /brainstorm → brainstorm output → claude /issue → GitHub issue
 #
 # Requirements:
 #   - Claude CLI installed and authenticated
 #   - GitHub CLI (gh) installed and authenticated
-#   - jq for JSON processing
 # ==============================================================================
 
 set -euo pipefail
@@ -36,8 +34,7 @@ ISSUE_TYPE=""           # bug, feature, enhancement, chore, docs
 TASK_INPUT=""
 INPUT_FILE=""
 FROM_STDIN=""
-SKIP_BRAINSTORM=""      # skip brainstorm, go straight to issue creation
-MODEL_FLAG="--model opus"  # brainstorm = reasoning task → opus
+SKIP_BRAINSTORM=""      # skip brainstorm, go straight to /issue
 
 # Colors
 RED='\033[0;31m'
@@ -77,17 +74,12 @@ for i in "${!ARGS[@]}"; do
                 ISSUE_TYPE="${ARGS[$((i+1))]}"
             fi
             ;;
-        --model)
-            if [[ -n "${ARGS[$((i+1))]:-}" ]]; then
-                MODEL_FLAG="--model ${ARGS[$((i+1))]}"
-            fi
-            ;;
         --*) ;; # skip unknown flags
         *)
-            # Skip values that follow --file, --type, --model
+            # Skip values that follow --file, --type
             if [[ "$i" -gt 0 ]]; then
                 prev="${ARGS[$((i-1))]}"
-                if [[ "$prev" == "--file" || "$prev" == "--type" || "$prev" == "--model" ]]; then
+                if [[ "$prev" == "--file" || "$prev" == "--type" ]]; then
                     continue
                 fi
             fi
@@ -120,7 +112,7 @@ fi
 # Pre-flight
 # ------------------------------------------------------------------------------
 
-for cmd in claude gh jq; do
+for cmd in claude gh; do
     if ! command -v "$cmd" &>/dev/null; then
         error "Required: $cmd"
         exit 1
@@ -130,176 +122,75 @@ done
 info "Task: ${TASK_INPUT:0:80}..."
 info "Type: ${ISSUE_TYPE:-auto-detect}"
 
+# Build claude flags
+CLAUDE_FLAGS="--output-format text"
+[[ "$AUTO_MODE" == "true" ]] && CLAUDE_FLAGS="$CLAUDE_FLAGS --dangerously-skip-permissions"
+
 # ------------------------------------------------------------------------------
-# Phase 1: Brainstorm (optional — skip with --skip-brainstorm)
+# Phase 1: claude /brainstorm (optional — skip with --skip-brainstorm)
 # ------------------------------------------------------------------------------
 
 BRAINSTORM_OUTPUT=""
-BRAINSTORM_FILE="${LOG_DIR}/brainstorm-$(date +%Y%m%d-%H%M%S)-output.md"
 
 if [[ "$SKIP_BRAINSTORM" != "true" ]]; then
-    info "Phase 1: Brainstorming..."
+    info "Phase 1: claude /brainstorm..."
 
-    BRAINSTORM_PROMPT="You are brainstorming a task for a GitHub issue. Analyze this task and produce:
-1. A clear, concise issue title with appropriate prefix ([BUG], [FEATURE], [ENHANCEMENT], [CHORE], [DOCS])
-2. A structured issue body with: description, acceptance criteria, technical notes
-3. Suggested labels (from: pipeline, ready_for_dev, frontend, hard)
-
-Task: ${TASK_INPUT}
-
-$(if [[ -n "$ISSUE_TYPE" ]]; then echo "Issue type hint: ${ISSUE_TYPE}"; fi)
-
-Output format:
----TITLE---
-[PREFIX] Title here
----BODY---
-## Description
-...
-## Acceptance Criteria
-- [ ] ...
-## Technical Notes
-...
----LABELS---
-pipeline,ready_for_dev
----END---"
+    TYPE_HINT=""
+    [[ -n "$ISSUE_TYPE" ]] && TYPE_HINT=" (type hint: ${ISSUE_TYPE})"
 
     if [[ "$DRY_RUN" == "true" ]]; then
-        info "[DRY RUN] Would run: claude $MODEL_FLAG -p '<brainstorm prompt>'"
-        echo "$BRAINSTORM_PROMPT" > "$BRAINSTORM_FILE"
-        info "Prompt saved to: $BRAINSTORM_FILE"
+        info "[DRY RUN] Would run: claude -p '/brainstorm ${TASK_INPUT:0:60}...${TYPE_HINT}'"
         exit 0
     fi
 
-    # Run Claude brainstorm
-    BRAINSTORM_OUTPUT=$(claude $MODEL_FLAG -p "$BRAINSTORM_PROMPT" 2>/dev/null || echo "")
+    BRAINSTORM_OUTPUT=$(claude -p "/brainstorm ${TASK_INPUT}${TYPE_HINT}" $CLAUDE_FLAGS 2>&1 | tee -a "$LOG_FILE")
 
     if [[ -z "$BRAINSTORM_OUTPUT" ]]; then
         error "Brainstorm failed — no output from Claude"
         exit 1
     fi
 
-    echo "$BRAINSTORM_OUTPUT" > "$BRAINSTORM_FILE"
-    info "Brainstorm saved to: $BRAINSTORM_FILE"
+    success "Brainstorm complete"
 else
     info "Skipping brainstorm (--skip-brainstorm)"
-
-    # Auto-generate title from task input
-    PREFIX="[FEATURE]"
-    case "${ISSUE_TYPE:-feature}" in
-        bug)         PREFIX="[BUG]" ;;
-        feature)     PREFIX="[FEATURE]" ;;
-        enhancement) PREFIX="[ENHANCEMENT]" ;;
-        chore)       PREFIX="[CHORE]" ;;
-        docs)        PREFIX="[DOCS]" ;;
-    esac
-
-    BRAINSTORM_OUTPUT="---TITLE---
-${PREFIX} ${TASK_INPUT}
----BODY---
-## Description
-${TASK_INPUT}
-
-## Acceptance Criteria
-- [ ] Implementation complete
-- [ ] Tests pass
-
-## Technical Notes
-Auto-generated from brainstorm-issue.sh --skip-brainstorm
----LABELS---
-pipeline,ready_for_dev
----END---"
+    BRAINSTORM_OUTPUT="$TASK_INPUT"
 fi
 
 # ------------------------------------------------------------------------------
-# Phase 2: Parse brainstorm output
+# Phase 2: claude /issue (creates GitHub issue from brainstorm output)
 # ------------------------------------------------------------------------------
 
-info "Phase 2: Parsing brainstorm output..."
+info "Phase 2: claude /issue..."
 
-# Extract sections using sed
-PARSED_TITLE=$(echo "$BRAINSTORM_OUTPUT" | sed -n '/---TITLE---/,/---BODY---/p' | grep -v '^---' | head -1 | xargs)
-PARSED_BODY=$(echo "$BRAINSTORM_OUTPUT" | sed -n '/---BODY---/,/---LABELS---/p' | grep -v '^---')
-PARSED_LABELS=$(echo "$BRAINSTORM_OUTPUT" | sed -n '/---LABELS---/,/---END---/p' | grep -v '^---' | head -1 | xargs)
-
-# Fallback if parsing fails
-if [[ -z "$PARSED_TITLE" ]]; then
-    PREFIX="[FEATURE]"
-    case "${ISSUE_TYPE:-feature}" in
-        bug) PREFIX="[BUG]" ;;
-        feature) PREFIX="[FEATURE]" ;;
-        enhancement) PREFIX="[ENHANCEMENT]" ;;
-        chore) PREFIX="[CHORE]" ;;
-        docs) PREFIX="[DOCS]" ;;
-    esac
-    PARSED_TITLE="${PREFIX} ${TASK_INPUT:0:70}"
-    warn "Title parsing failed, using fallback: $PARSED_TITLE"
-fi
-
-if [[ -z "$PARSED_BODY" ]]; then
-    PARSED_BODY="## Description\n${TASK_INPUT}"
-    warn "Body parsing failed, using task input as body"
-fi
-
-if [[ -z "$PARSED_LABELS" ]]; then
-    PARSED_LABELS="pipeline,ready_for_dev"
-fi
-
-info "Title: $PARSED_TITLE"
-info "Labels: $PARSED_LABELS"
-
-# ------------------------------------------------------------------------------
-# Phase 3: Create GitHub issue
-# ------------------------------------------------------------------------------
-
-info "Phase 3: Creating GitHub issue..."
-
-# Build label args
-LABEL_ARGS=""
-IFS=',' read -ra LABEL_ARRAY <<< "$PARSED_LABELS"
-for label in "${LABEL_ARRAY[@]}"; do
-    label=$(echo "$label" | xargs) # trim whitespace
-    LABEL_ARGS="$LABEL_ARGS --label \"$label\""
-done
+# Build /issue prompt with brainstorm context
+ISSUE_PROMPT="/issue ${BRAINSTORM_OUTPUT}"
 
 if [[ "$DRY_RUN" == "true" ]]; then
-    info "[DRY RUN] Would create issue:"
-    echo "  Title: $PARSED_TITLE"
-    echo "  Labels: $PARSED_LABELS"
-    echo "  Body:"
-    echo "$PARSED_BODY"
+    info "[DRY RUN] Would run: claude -p '/issue <brainstorm output>'"
+    echo "$BRAINSTORM_OUTPUT"
     exit 0
 fi
 
 # Confirm if not in auto mode
 if [[ "$AUTO_MODE" != "true" ]]; then
     echo ""
-    echo -e "${YELLOW}About to create issue:${NC}"
-    echo -e "  Title: ${GREEN}$PARSED_TITLE${NC}"
-    echo -e "  Labels: $PARSED_LABELS"
+    echo -e "${YELLOW}Brainstorm output:${NC}"
+    echo "$BRAINSTORM_OUTPUT" | head -20
     echo ""
-    read -p "Create this issue? [Y/n] " confirm
+    read -p "Create issue from this brainstorm? [Y/n] " confirm
     if [[ "${confirm:-Y}" =~ ^[Nn] ]]; then
         warn "Aborted by user"
+        info "Brainstorm saved in log: $LOG_FILE"
         exit 0
     fi
 fi
 
-# Create the issue
-ISSUE_URL=$(gh issue create \
-    --title "$PARSED_TITLE" \
-    --body "$PARSED_BODY" \
-    $(eval echo "$LABEL_ARGS") \
-    2>/dev/null)
+# Run /issue via Claude to create the GitHub issue
+ISSUE_OUTPUT=$(claude -p "$ISSUE_PROMPT" $CLAUDE_FLAGS 2>&1 | tee -a "$LOG_FILE")
 
-if [[ -n "$ISSUE_URL" ]]; then
-    CREATED_NUM=$(echo "$ISSUE_URL" | grep -oE '[0-9]+$')
-    success "Issue created: #${CREATED_NUM} — ${ISSUE_URL}"
-
-    # Post to report-issue.sh if available
-    if [[ -f "${SCRIPT_DIR}/report-issue.sh" ]]; then
-        info "Sending creation report..."
-        bash "${SCRIPT_DIR}/report-issue.sh" "$CREATED_NUM" --clipboard 2>/dev/null || true
-    fi
+if [[ -n "$ISSUE_OUTPUT" ]]; then
+    success "Issue creation complete"
+    echo "$ISSUE_OUTPUT"
 else
     error "Failed to create issue"
     exit 1

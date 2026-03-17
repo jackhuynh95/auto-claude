@@ -8,8 +8,8 @@ Full reference for the auto-claude autonomous issue pipeline.
 
 ```
 brainstorm-issue.sh "task description"       # from CLI, file, or stdin
-  └─→ Claude /brainstorm (opus) → structured issue
-        └─→ gh issue create --label "pipeline,ready_for_dev,<type>"
+  └─→ claude /brainstorm → brainstorm output
+        └─→ claude /issue → GitHub issue (pipeline,ready_for_dev)
               └─→ looper.sh scans on interval (/loop)
                     ├─→ ready_for_dev:
                     │     ├─→ [BUG]              → fix-issue.sh
@@ -227,7 +227,7 @@ Saves ~60–70% tokens vs running everything on Opus.
 | `setup-labels.sh` | Create all pipeline labels on GitHub (run once) |
 | `looper-profiles.sh` | Custom scheduling profiles |
 | `test-only.sh` | Run Claude `/test` command standalone |
-| `brainstorm-issue.sh` | Task description → Claude brainstorm → GitHub issue |
+| `brainstorm-issue.sh` | `claude /brainstorm` → `claude /issue` → GitHub issue |
 | `report-issue.sh` | Post-fix/ship reporting via `claude /slack-report` (extracts log summary) |
 | `/issue` | Create pipeline-ready GitHub issue (interactive or from brainstorm) |
 | `/brainstorm` | Ideation → optionally creates issue via `/issue` |
@@ -241,7 +241,7 @@ Channel: `#medusa-agent-swarm`
 
 | Script | Purpose | Status |
 |--------|---------|--------|
-| `brainstorm-issue.sh` | Task input (CLI/file/stdin) → Claude brainstorm → `/issue` | Active |
+| `brainstorm-issue.sh` | `claude /brainstorm` → `claude /issue` inline | Active |
 | `report-issue.sh` | Post-fix/ship reporting via `claude /slack-report` + log extraction | Active |
 | `read-slack.sh` | Read Slack channel (API / screenshot+OCR / paste) | Active |
 | `/uncle-report` | Daily summary for Thierry on log channel | Active |
@@ -256,7 +256,7 @@ Three approaches in priority order:
 ### Full Loop
 
 ```
-read-slack.sh → brainstorm-issue.sh --stdin → /issue → looper.sh → fix/ship → report-issue.sh → Slack
+read-slack.sh → brainstorm-issue.sh --stdin --auto → looper.sh → fix/ship → report-issue.sh → Slack
 ```
 
 `report-issue.sh` uses `claude -p "/slack-report ..."` inline (same pattern as ship-issue uses `/code:auto`). Credentials managed by the `/slack-report` skill's `.env`.
