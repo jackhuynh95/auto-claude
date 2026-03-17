@@ -7,23 +7,20 @@ Full reference for the auto-claude autonomous issue pipeline.
 ## How It Works
 
 ```
-Slack #medusa-agent-swarm (daily read)
-  └─→ brainstorm_issue.sh (auto-create issue from task)
-        └─→ /brainstorm "idea"
-              └─→ discussion & research
-                    └─→ "Create GitHub Issue?" → /issue
-                          └─→ gh issue create --label "pipeline,ready_for_dev,<type>"
-                                └─→ looper.sh scans on interval (/loop)
-                                      ├─→ ready_for_dev:
-                                      │     ├─→ [BUG]              → fix-issue.sh
-                                      │     ├─→ [FEATURE/ENHANCE]  → ship-issue.sh
-                                      │     └─→ [WONTFIX/WONTFEAT] → skipped
-                                      │           └─→ on success → ready_for_test
-                                      └─→ ready_for_test:
-                                            └─→ verify-issue.sh (e2e)
-                                                  ├─→ pass → verified → closed
-                                                  └─→ fail → ready_for_dev (re-queued)
-                                                        └─→ report-issue.sh → Slack #medusa-agent-swarm
+brainstorm-issue.sh "task description"       # from CLI, file, or stdin
+  └─→ Claude /brainstorm (opus) → structured issue
+        └─→ gh issue create --label "pipeline,ready_for_dev,<type>"
+              └─→ looper.sh scans on interval (/loop)
+                    ├─→ ready_for_dev:
+                    │     ├─→ [BUG]              → fix-issue.sh
+                    │     ├─→ [FEATURE/ENHANCE]  → ship-issue.sh
+                    │     └─→ [WONTFIX/WONTFEAT] → skipped
+                    │           └─→ on success → ready_for_test
+                    └─→ ready_for_test:
+                          └─→ verify-issue.sh (e2e)
+                                ├─→ pass → verified → closed
+                                └─→ fail → ready_for_dev (re-queued)
+                                      └─→ report-issue.sh → Slack #medusa-agent-swarm
 ```
 
 You can also skip brainstorming and create issues directly:
@@ -226,7 +223,7 @@ Saves ~60–70% tokens vs running everything on Opus.
 | `setup-labels.sh` | Create all pipeline labels on GitHub (run once) |
 | `looper-profiles.sh` | Custom scheduling profiles |
 | `test-only.sh` | Run Claude `/test` command standalone |
-| `brainstorm_issue.sh` | Read Slack tasks → brainstorm → create GitHub issue (planned) |
+| `brainstorm-issue.sh` | Task description → Claude brainstorm → GitHub issue |
 | `report-issue.sh` | Post-fix/ship Slack reporting — wraps `slack-report` (planned) |
 | `/issue` | Create pipeline-ready GitHub issue (interactive or from brainstorm) |
 | `/brainstorm` | Ideation → optionally creates issue via `/issue` |
@@ -240,17 +237,25 @@ Channel: `#medusa-agent-swarm`
 
 | Script | Purpose | Status |
 |--------|---------|--------|
-| `brainstorm_issue.sh` | Read Slack tasks → `/brainstorm` → `/issue` | Planned |
-| `report-issue.sh` | Post-fix/ship reporting → Slack via `slack-report` | Planned |
+| `brainstorm-issue.sh` | Task input (CLI/file/stdin) → Claude brainstorm → `/issue` | Active |
+| `report-issue.sh` | Post-fix/ship reporting → Slack via clipboard or webhook | Active |
+| `read-slack.sh` | Read tasks from Slack channel (project-specific) | Planned |
 | `/uncle-report` | Daily summary for Thierry on log channel | Active |
+
+### Slack Reader (Planned)
+
+Three approaches in priority order:
+1. **agent-browser + Vercel Slack companion** — headless browser automation
+2. **Slack Bot API** (`conversations.history`) — requires bot token per workspace
+3. **Fallback: screenshot + OCR** — `screencapture` → `ai-multimodal` skill
 
 ### Full Loop
 
 ```
-Slack read → brainstorm_issue.sh → /issue → looper.sh → fix/ship → report-issue.sh → Slack post
+read-slack.sh → brainstorm-issue.sh --stdin → /issue → looper.sh → fix/ship → report-issue.sh → Slack
 ```
 
-Morning routine: agent reads `#medusa-agent-swarm` for daily tasks, processes them through the pipeline, reports results back.
+Today: `brainstorm-issue.sh` and `report-issue.sh` are active. Slack reader (`read-slack.sh`) is next — project-specific glue, built per-project.
 
 ---
 
