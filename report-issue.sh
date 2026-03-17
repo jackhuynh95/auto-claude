@@ -2,19 +2,21 @@
 # ==============================================================================
 # Script: report-issue.sh
 # Description: Post-fix/ship Slack reporting for pipeline issues.
-#              Gathers issue context, PR status, and posts a summary to
-#              #medusa-agent-swarm via Claude CLI's slack-report skill.
+#              Gathers issue context, PR status, and sends to Slack
+#              via claude -p "/slack-report ..." (same as ship-issue uses /code:auto).
+#              Fallback: clipboard + open Slack.
 #
 # Usage:       ./report-issue.sh <issue-number> [flags...]
 # Example:     ./report-issue.sh 42
-#              ./report-issue.sh 42 --channel "#medusa-agent-swarm"
+#              ./report-issue.sh 42 --auto          # skip Claude permissions
 #              ./report-issue.sh 42 --dry-run
-#              ./report-issue.sh 42 --clipboard   # copy to clipboard only
+#              ./report-issue.sh 42 --clipboard     # copy to clipboard only
 #
-# Designed to be called by looper.sh after fix-issue.sh or ship-issue.sh
-# completes successfully.
+# Designed to be called by looper.sh, fix-issue.sh, or ship-issue.sh
+# after successful PR creation.
 #
 # Requirements:
+#   - Claude CLI installed and authenticated (for /slack-report skill)
 #   - GitHub CLI (gh) installed and authenticated
 #   - jq for JSON processing
 # ==============================================================================
@@ -30,23 +32,21 @@ ISSUE_NUM="${1:-}"
 # Defaults
 DRY_RUN=""
 CLIPBOARD_ONLY=""
+AUTO_MODE=""
 CHANNEL="#medusa-agent-swarm"
 
 # Parse flags
-for arg in "$@"; do
-    case "$arg" in
-        --dry-run) DRY_RUN="true" ;;
-        --clipboard) CLIPBOARD_ONLY="true" ;;
-        [0-9]*) ;; # skip issue number
-    esac
-done
-
-# Parse --channel value
 ARGS=("$@")
 for i in "${!ARGS[@]}"; do
-    if [[ "${ARGS[$i]}" == "--channel" ]] && [[ -n "${ARGS[$((i+1))]:-}" ]]; then
-        CHANNEL="${ARGS[$((i+1))]}"
-    fi
+    case "${ARGS[$i]}" in
+        --dry-run) DRY_RUN="true" ;;
+        --clipboard) CLIPBOARD_ONLY="true" ;;
+        --auto) AUTO_MODE="true" ;;
+        --channel)
+            [[ -n "${ARGS[$((i+1))]:-}" ]] && CHANNEL="${ARGS[$((i+1))]}"
+            ;;
+        [0-9]*) ;; # skip issue number
+    esac
 done
 
 # Colors
@@ -87,7 +87,8 @@ done
 info "Gathering context for issue #${ISSUE_NUM}..."
 
 # Fetch issue details
-ISSUE_JSON=$(gh issue view "$ISSUE_NUM" --json title,state,labels,body,closedAt 2>/dev/null || echo "{}")
+ISSUE_JSON="$(gh issue view "$ISSUE_NUM" --json title,state,labels,body,closedAt 2>/dev/null || true)"
+[[ -z "$ISSUE_JSON" ]] && ISSUE_JSON="{}"
 ISSUE_TITLE=$(echo "$ISSUE_JSON" | jq -r '.title // "Unknown"')
 ISSUE_STATE=$(echo "$ISSUE_JSON" | jq -r '.state // "UNKNOWN"')
 ISSUE_LABELS=$(echo "$ISSUE_JSON" | jq -r '[.labels[]?.name] | join(", ") // "none"')
@@ -149,60 +150,76 @@ case "$CURRENT_STAGE" in
 esac
 
 # ------------------------------------------------------------------------------
-# Build Slack report (Slack-native formatting)
+# Extract executive summary from latest fix/ship log
 # ------------------------------------------------------------------------------
 
-REPORT="${STATUS_EMOJI} *#${ISSUE_NUM} — ${ISSUE_TITLE}*
-• Type: ${ISSUE_TYPE} | Stage: *${CURRENT_STAGE}*
-• ${PR_INFO}
-• Labels: ${ISSUE_LABELS}"
+EXEC_SUMMARY=""
 
-info "Report preview:"
+# Find latest log for this issue (fix-*.log, ship-*.log, or .md variants)
+LATEST_LOG=$(ls -t "${LOG_DIR}"/fix-*.log "${LOG_DIR}"/fix-*.md "${LOG_DIR}"/ship-*.log "${LOG_DIR}"/ship-*.md 2>/dev/null | head -1 || true)
+
+if [[ -n "$LATEST_LOG" ]] && [[ -f "$LATEST_LOG" ]]; then
+    info "Found execution log: $LATEST_LOG"
+    # Extract last 50 lines — the summary/result section
+    EXEC_SUMMARY=$(tail -50 "$LATEST_LOG" 2>/dev/null | head -30)
+fi
+
+# ------------------------------------------------------------------------------
+# Build context for /slack-report
+# ------------------------------------------------------------------------------
+
+CONTEXT="${STATUS_EMOJI} Issue #${ISSUE_NUM} — ${ISSUE_TITLE}
+Type: ${ISSUE_TYPE} | Stage: ${CURRENT_STAGE}
+${PR_INFO}
+Labels: ${ISSUE_LABELS}"
+
+if [[ -n "$EXEC_SUMMARY" ]]; then
+    CONTEXT="${CONTEXT}
+
+--- Execution Log (last run) ---
+${EXEC_SUMMARY}"
+fi
+
+info "Context preview:"
 echo ""
-echo "$REPORT"
+echo "$CONTEXT"
 echo ""
 
 # ------------------------------------------------------------------------------
-# Deliver
+# Deliver: claude -p "/slack-report ..." → clipboard fallback
+# Same pattern as ship-issue.sh uses claude -p "/code:auto ..."
 # ------------------------------------------------------------------------------
 
 if [[ "$DRY_RUN" == "true" ]]; then
-    info "[DRY RUN] Would send to ${CHANNEL}:"
-    echo "$REPORT"
+    info "[DRY RUN] Would send via /slack-report to ${CHANNEL}:"
+    echo "$CONTEXT"
     exit 0
 fi
 
 if [[ "$CLIPBOARD_ONLY" == "true" ]]; then
-    echo "$REPORT" | pbcopy
-    success "Report copied to clipboard. Paste in ${CHANNEL}."
+    echo "$CONTEXT" | pbcopy
+    success "Report copied to clipboard."
     exit 0
 fi
 
-# Try Slack webhook if configured, otherwise clipboard fallback
-if [[ -n "${SLACK_WEBHOOK_URL:-}" ]]; then
-    # Send via Slack webhook
-    PAYLOAD=$(jq -n --arg text "$REPORT" --arg channel "$CHANNEL" '{
-        channel: $channel,
-        text: $text,
-        unfurl_links: false
-    }')
+# Build claude flags
+CLAUDE_FLAGS="--model haiku --output-format text"
+[[ "$AUTO_MODE" == "true" ]] && CLAUDE_FLAGS="$CLAUDE_FLAGS --dangerously-skip-permissions"
 
-    HTTP_STATUS=$(curl -s -o /dev/null -w "%{http_code}" \
-        -X POST "$SLACK_WEBHOOK_URL" \
-        -H "Content-Type: application/json" \
-        -d "$PAYLOAD" 2>/dev/null || echo "000")
-
-    if [[ "$HTTP_STATUS" == "200" ]]; then
+# claude -p "/slack-report ..." — Claude reads context, generates report, sends via skill
+if command -v claude &>/dev/null; then
+    info "Sending via claude /slack-report to ${CHANNEL}..."
+    if claude -p "/slack-report ${CONTEXT}" $CLAUDE_FLAGS 2>&1 | tee -a "$LOG_FILE"; then
         success "Report sent to ${CHANNEL}"
     else
-        warn "Webhook failed (HTTP $HTTP_STATUS). Copying to clipboard instead."
-        echo "$REPORT" | pbcopy
+        warn "/slack-report failed — falling back to clipboard"
+        echo "$CONTEXT" | pbcopy
         open -a Slack 2>/dev/null || true
         success "Report copied to clipboard. Paste in ${CHANNEL}."
     fi
 else
-    # No webhook — clipboard + open Slack
-    echo "$REPORT" | pbcopy
+    warn "Claude CLI not available"
+    echo "$CONTEXT" | pbcopy
     open -a Slack 2>/dev/null || true
     success "Report copied to clipboard. Paste in ${CHANNEL}."
 fi

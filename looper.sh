@@ -296,7 +296,7 @@ report_issue() {
         return
     fi
     info "Reporting #$num to Slack..."
-    bash "${SCRIPT_DIR}/report-issue.sh" "$num" --clipboard 2>&1 | tee -a "$LOG_FILE" || true
+    bash "${SCRIPT_DIR}/report-issue.sh" "$num" 2>&1 | tee -a "$LOG_FILE" || true
 }
 
 # ------------------------------------------------------------------------------
