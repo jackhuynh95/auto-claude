@@ -228,7 +228,7 @@ Saves ~60–70% tokens vs running everything on Opus.
 | `looper-profiles.sh` | Custom scheduling profiles |
 | `test-only.sh` | Run Claude `/test` command standalone |
 | `brainstorm-issue.sh` | Task description → Claude brainstorm → GitHub issue |
-| `report-issue.sh` | Post-fix/ship Slack reporting — wraps `slack-report` (planned) |
+| `report-issue.sh` | Post-fix/ship reporting via `claude /slack-report` (extracts log summary) |
 | `/issue` | Create pipeline-ready GitHub issue (interactive or from brainstorm) |
 | `/brainstorm` | Ideation → optionally creates issue via `/issue` |
 | `research.sh` | Research topic → create GitHub issue |
@@ -242,8 +242,8 @@ Channel: `#medusa-agent-swarm`
 | Script | Purpose | Status |
 |--------|---------|--------|
 | `brainstorm-issue.sh` | Task input (CLI/file/stdin) → Claude brainstorm → `/issue` | Active |
-| `report-issue.sh` | Post-fix/ship reporting → Slack via clipboard or webhook | Active |
-| `read-slack.sh` | Read tasks from Slack channel (project-specific) | Planned |
+| `report-issue.sh` | Post-fix/ship reporting via `claude /slack-report` + log extraction | Active |
+| `read-slack.sh` | Read Slack channel (API / screenshot+OCR / paste) | Active |
 | `/uncle-report` | Daily summary for Thierry on log channel | Active |
 
 ### Slack Reader (Planned)
@@ -259,7 +259,7 @@ Three approaches in priority order:
 read-slack.sh → brainstorm-issue.sh --stdin → /issue → looper.sh → fix/ship → report-issue.sh → Slack
 ```
 
-Today: `brainstorm-issue.sh` and `report-issue.sh` are active. Slack reader (`read-slack.sh`) is next — project-specific glue, built per-project.
+`report-issue.sh` uses `claude -p "/slack-report ..."` inline (same pattern as ship-issue uses `/code:auto`). Credentials managed by the `/slack-report` skill's `.env`.
 
 ---
 

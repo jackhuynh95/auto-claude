@@ -89,11 +89,11 @@ done
 ## Pipeline Stages (Label Flow)
 
 ```
-read-slack.sh (planned) → brainstorm-issue.sh → /issue
+read-slack.sh → brainstorm-issue.sh → /issue
 ready_for_dev → fix-issue.sh / ship-issue.sh → ready_for_test
 ready_for_test → verify-issue.sh (e2e) → verified → closed
                                        → ready_for_dev (fail, re-queued)
-verified/closed → report-issue.sh → Slack (planned)
+verified/closed → report-issue.sh → Slack
 ```
 
 ---
