@@ -83,9 +83,11 @@ done
 ## Pipeline Stages (Label Flow)
 
 ```
+Slack #medusa-agent-swarm → brainstorm_issue.sh → /issue (planned)
 ready_for_dev → fix-issue.sh / ship-issue.sh → ready_for_test
 ready_for_test → verify-issue.sh (e2e) → verified → closed
                                        → ready_for_dev (fail, re-queued)
+verified/closed → report-issue.sh → Slack (planned)
 ```
 
 ---
