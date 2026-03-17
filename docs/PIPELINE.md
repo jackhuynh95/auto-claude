@@ -112,10 +112,13 @@ done
 ### Manual
 
 ```bash
-./looper.sh                          # full scan (all stages)
+./looper.sh                          # full scan (all labels)
 ./looper.sh --dry-run                # preview — shows what would run
-./looper.sh --label ready_for_dev   # single stage only
-./looper.sh --limit 3               # cap at 3 issues
+./looper.sh --label ready_for_dev    # single label only
+./looper.sh --label "ready_for_dev,ready_for_test"  # multiple labels
+./looper.sh --limit 3                # cap at 3 issues
+./looper.sh --read-slack             # read Slack → brainstorm → issue, then pipeline
+./looper.sh --read-slack --label ready_for_dev  # Slack read + single label
 ```
 
 ### Via `/loop` (Claude Code built-in — repeats on interval)
@@ -124,6 +127,7 @@ done
 /loop 2h ./looper.sh --profile overnight
 /loop 4h ./looper.sh --profile daytime
 /loop 1h ./looper.sh --profile continuous
+/loop 4h ./looper.sh --read-slack --profile morning  # read Slack every morning
 ```
 
 ### Scheduling Profiles

@@ -32,17 +32,23 @@ Missing either = issue is ignored or misrouted.
 
 ```bash
 # One-shot (manual, cron, CI)
-./looper.sh
-./looper.sh --dry-run          # preview only
+./looper.sh                                        # full scan (all labels)
+./looper.sh --dry-run                              # preview only
+./looper.sh --label ready_for_dev                  # single label
+./looper.sh --label "ready_for_dev,ready_for_test" # multiple labels
+./looper.sh --read-slack                           # Slack → brainstorm → issue first
 
 # Recurring (Claude Code built-in /loop)
 /loop 2h ./looper.sh --profile overnight
 /loop 4h ./looper.sh --profile daytime
 /loop 1h ./looper.sh --profile continuous
+/loop 4h ./looper.sh --read-slack --profile morning
 ```
 
 `looper.sh` is always stateless — scans and dispatches once per execution.
 `/loop` is the Claude Code built-in that re-runs it on interval.
+`--read-slack` runs `read-slack.sh` → `brainstorm-issue.sh` before the label scan.
+After successful fix/ship/verify, `report-issue.sh` auto-reports to Slack.
 
 ---
 
