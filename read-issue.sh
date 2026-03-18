@@ -133,8 +133,14 @@ if [[ "$AUTO_MODE" != "true" ]]; then
     fi
 fi
 
-# Pipe all tasks at once — let Claude skills handle parsing/type detection
-echo "$SLACK_OUTPUT" | "$BRAINSTORM_SCRIPT" --stdin $BRAINSTORM_FLAGS 2>&1 | tee -a "$LOG_FILE"
+# Process each task line — one brainstorm-issue per task
+ISSUE_COUNT=0
+while IFS= read -r task; do
+    [[ -z "$task" ]] && continue
+    info "Processing: ${task:0:80}..."
+    echo "$task" | "$BRAINSTORM_SCRIPT" --stdin $BRAINSTORM_FLAGS 2>&1 | tee -a "$LOG_FILE"
+    ISSUE_COUNT=$((ISSUE_COUNT + 1))
+done <<< "$SLACK_OUTPUT"
 
-success "Issue creation complete"
+success "Created $ISSUE_COUNT issue(s)"
 info "Log: $LOG_FILE"
