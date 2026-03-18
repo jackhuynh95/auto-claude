@@ -69,6 +69,15 @@ All flags work on both `fix-issue.sh` and `ship-issue.sh`:
 | `--no-test` | Skip tests (docs, configs, trivial changes) |
 | `--codex` / `--opencode` | Fallback tool if Claude fails |
 
+## Model & Effort Routing
+
+| Phase | Model | Effort |
+|---|---|---|
+| `/brainstorm` | Opus | max |
+| `/plan`, `/debug` | Opus | high |
+| `/issue` | Sonnet | medium |
+| `/fix`, `/code`, `e2e-test` | Sonnet | default |
+
 ## Requirements
 
 - `claude` (Claude Code CLI)
