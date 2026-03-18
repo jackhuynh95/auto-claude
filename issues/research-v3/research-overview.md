@@ -2,6 +2,21 @@
 
 Cross-references the external `ralph-claude-code` vs `agent-teams` comparison (screenshot, 2026-03-18) against V2's codebase-grounded analysis. Identifies what the external comparison got right, what it missed about auto-claude's actual state, and what new gaps surface.
 
+## ⚠️ Billing Trap: Do NOT Use `agent-teams` / `--teammate` Flag
+
+Claude Code's experimental `agent-teams` feature (invoked via the `--teammate` flag or `claude agent-teams`) **multiplies your Anthropic bill by N+1**:
+
+- 1 Lead agent = 1 full context window billed
+- Each teammate spawned = another full context window billed independently
+- 3 teammates = **4 separate context windows running simultaneously** on your API key
+- Every teammate re-loads the system prompt, CLAUDE.md, memory — from scratch, every time
+
+There is **no cost cap, no shared context, no token pooling**. A single overnight run with 3 teammates on Opus can easily exceed $50-100 in API charges before you wake up. The feature is experimental — Anthropic may change billing behavior without warning.
+
+**Auto-claude's swarm approach avoids this:** each worker is a single `claude -p` CLI call (1 context window), not a Lead+Teammate architecture. Workers are isolated processes, not Anthropic-managed agents.
+
+---
+
 ## Key Difference from V2
 
 V2 audited internal guardrails and proposed `spawn-worker.sh` + `swarm-commander.sh`. **V3 pressure-tests those proposals against the external comparison's architecture dimensions** — surfacing blind spots in both analyses.
