@@ -86,29 +86,12 @@ CLAUDE_FLAGS="--output-format text"
 
 info "Phase 1: claude /slack-read..."
 
-SLACK_PROMPT="/slack-read Read messages from ${CHANNEL} channel.
-
-Task detection rules:
-- Messages containing 'Hey Claude, this is a task' or 'Hey Claude, that one is a task' are explicit tasks
-- Emoji reactions hint at type: 🎯 = feature/enhancement, 🧪 = test/e2e, 🦺 = chore, 🐛 = bug
-- Messages without explicit markers but containing actionable items (bugs, features, enhancements, chores) are also tasks
-
-Output format — one task per line:
-[TYPE] task description
-
-Where TYPE is: BUG, FEATURE, ENHANCEMENT, CHORE, DOCS, or TEST
-Example: [FEATURE] Add wishlist plugin with product favoriting
-Example: [BUG] Cart total not updating after coupon removal
-Example: [CHORE] Upgrade /v2.xx.x folder at root + claude skill /upgrade-medusa
-
-Skip greetings, reactions, status messages, and non-actionable chatter."
-
 if [[ "$DRY_RUN" == "true" ]]; then
-    info "[DRY RUN] Would run: claude -p '/slack-read ${CHANNEL}...'"
+    info "[DRY RUN] Would run: claude -p '/slack-read ${CHANNEL}'"
     exit 0
 fi
 
-SLACK_OUTPUT=$(claude -p "$SLACK_PROMPT" $CLAUDE_FLAGS 2>&1 | tee -a "$LOG_FILE")
+SLACK_OUTPUT=$(claude -p "/slack-read ${CHANNEL}" $CLAUDE_FLAGS 2>&1 | tee -a "$LOG_FILE")
 
 if [[ -z "$SLACK_OUTPUT" ]] || echo "$SLACK_OUTPUT" | grep -qi "no.*tasks\|no.*messages\|no.*actionable"; then
     warn "No actionable tasks found in $CHANNEL"
@@ -124,7 +107,7 @@ echo "$SLACK_OUTPUT" | nl -ba
 echo ""
 
 # ------------------------------------------------------------------------------
-# Phase 2: Pipe each task into brainstorm-issue.sh
+# Phase 2: Pipe output into brainstorm-issue.sh
 # ------------------------------------------------------------------------------
 
 info "Phase 2: Creating issues from tasks..."
@@ -150,25 +133,8 @@ if [[ "$AUTO_MODE" != "true" ]]; then
     fi
 fi
 
-# Process each task line
-ISSUE_COUNT=0
-while IFS= read -r task; do
-    # Skip empty lines
-    [[ -z "$task" ]] && continue
+# Pipe all tasks at once — let Claude skills handle parsing/type detection
+echo "$SLACK_OUTPUT" | "$BRAINSTORM_SCRIPT" --stdin $BRAINSTORM_FLAGS 2>&1 | tee -a "$LOG_FILE"
 
-    info "Processing: ${task:0:80}..."
-
-    # Extract [TYPE] prefix if present, pass as --type to brainstorm-issue.sh
-    TYPE_FLAG=""
-    if [[ "$task" =~ ^\[([A-Z]+)\] ]]; then
-        TYPE_FLAG="--type ${BASH_REMATCH[1],,}"  # lowercase: FEATURE → feature
-    fi
-
-    echo "$task" | "$BRAINSTORM_SCRIPT" --stdin $BRAINSTORM_FLAGS $TYPE_FLAG 2>&1 | tee -a "$LOG_FILE"
-    ISSUE_COUNT=$((ISSUE_COUNT + 1))
-
-    info "---"
-done <<< "$SLACK_OUTPUT"
-
-success "Created $ISSUE_COUNT issue(s)"
+success "Issue creation complete"
 info "Log: $LOG_FILE"
