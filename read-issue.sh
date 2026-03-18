@@ -155,9 +155,8 @@ if [[ ! -x "$BRAINSTORM_SCRIPT" ]]; then
     exit 1
 fi
 
-# Build brainstorm flags
-BRAINSTORM_FLAGS=""
-[[ "$AUTO_MODE" == "true" ]] && BRAINSTORM_FLAGS="$BRAINSTORM_FLAGS --auto"
+# brainstorm-issue.sh always runs with --auto (sub-script, must not block)
+BRAINSTORM_FLAGS="--auto"
 [[ "$SKIP_BRAINSTORM" == "true" ]] && BRAINSTORM_FLAGS="$BRAINSTORM_FLAGS --skip-brainstorm"
 
 ISSUE_COUNT=0
