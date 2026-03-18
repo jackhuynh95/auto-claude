@@ -30,6 +30,7 @@ LOG_FILE="${LOG_DIR}/read-issue-$(date +%Y%m%d-%H%M%S).log"
 DRY_RUN=""
 AUTO_MODE=""
 CHANNEL="#medusa-agent-swarm"
+SINCE=""
 SKIP_BRAINSTORM=""
 
 # Colors
@@ -60,6 +61,9 @@ for i in "${!ARGS[@]}"; do
         --channel)
             [[ -n "${ARGS[$((i+1))]:-}" ]] && CHANNEL="${ARGS[$((i+1))]}"
             ;;
+        --since)
+            [[ -n "${ARGS[$((i+1))]:-}" ]] && SINCE="${ARGS[$((i+1))]}"
+            ;;
     esac
 done
 
@@ -86,12 +90,16 @@ CLAUDE_FLAGS="--output-format text"
 
 info "Phase 1: claude /slack-read..."
 
+# Build slack-read prompt with optional --since
+SINCE_HINT=""
+[[ -n "$SINCE" ]] && SINCE_HINT=" since ${SINCE}"
+
 if [[ "$DRY_RUN" == "true" ]]; then
-    info "[DRY RUN] Would run: claude -p '/slack-read ${CHANNEL}'"
+    info "[DRY RUN] Would run: claude -p '/slack-read ${CHANNEL}${SINCE_HINT}'"
     exit 0
 fi
 
-SLACK_OUTPUT=$(claude -p "/slack-read ${CHANNEL}" $CLAUDE_FLAGS 2>&1 | tee -a "$LOG_FILE")
+SLACK_OUTPUT=$(claude -p "/slack-read ${CHANNEL}${SINCE_HINT}" $CLAUDE_FLAGS 2>&1 | tee -a "$LOG_FILE")
 
 if [[ -z "$SLACK_OUTPUT" ]] || echo "$SLACK_OUTPUT" | grep -qi "no.*tasks\|no.*messages\|no.*actionable"; then
     warn "No actionable tasks found in $CHANNEL"

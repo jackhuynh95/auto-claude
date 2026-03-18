@@ -43,6 +43,7 @@ FILTER_LABEL=""
 PROFILE=""
 READ_SLACK=""           # --read-slack: scan Slack before pipeline run
 SLACK_CHANNEL=""        # --channel: Slack channel for read-issue.sh
+SLACK_SINCE=""          # --since: time filter for read-issue.sh
 
 # Run results tracking
 TOTAL_PROCESSED=0
@@ -76,6 +77,9 @@ for i in "${!ARGS[@]}"; do
         --read-slack) READ_SLACK="true" ;;
         --channel)
             SLACK_CHANNEL="${ARGS[$((i+1))]:-}"
+            ;;
+        --since)
+            SLACK_SINCE="${ARGS[$((i+1))]:-}"
             ;;
     esac
 done
@@ -265,18 +269,19 @@ read_slack_tasks() {
         return
     fi
 
-    # Build channel flag
-    local channel_flag=""
-    [[ -n "$SLACK_CHANNEL" ]] && channel_flag="--channel $SLACK_CHANNEL"
+    # Build passthrough flags
+    local extra_flags=""
+    [[ -n "$SLACK_CHANNEL" ]] && extra_flags="$extra_flags --channel $SLACK_CHANNEL"
+    [[ -n "$SLACK_SINCE" ]] && extra_flags="$extra_flags --since \"$SLACK_SINCE\""
 
-    info "Reading tasks from Slack via read-issue.sh... ${SLACK_CHANNEL:-#medusa-agent-swarm}"
+    info "Reading tasks from Slack via read-issue.sh... ${SLACK_CHANNEL:-#medusa-agent-swarm} ${SLACK_SINCE:+(since $SLACK_SINCE)}"
 
     if [[ "$DRY_RUN" == "true" ]]; then
-        info "[DRY RUN] Would run: read-issue.sh --auto $channel_flag"
+        info "[DRY RUN] Would run: read-issue.sh --auto $extra_flags"
         return
     fi
 
-    if bash "${SCRIPT_DIR}/read-issue.sh" --auto $channel_flag 2>&1 | tee -a "$LOG_FILE"; then
+    if bash "${SCRIPT_DIR}/read-issue.sh" --auto $extra_flags 2>&1 | tee -a "$LOG_FILE"; then
         success "Slack read → issue creation complete"
     else
         warn "read-issue.sh failed or no tasks found"
