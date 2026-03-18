@@ -1,22 +1,19 @@
 #!/bin/bash
 # ==============================================================================
 # Script: read-issue.sh
-# Description: Reads Slack messages via claude /slack-read skill, then pipes
-#              each task into brainstorm-issue.sh to create GitHub issues.
-#              Same inline pattern as brainstorm-issue.sh uses /brainstorm → /issue.
+# Description: Reads Slack messages via claude /slack-read skill, outputs task
+#              summary as todo list, and posts summary via /slack-report.
+#              Does NOT brainstorm — looper --brainstorm-prd handles that.
 #
-# Usage:       ./read-issue.sh
-#              ./read-issue.sh --channel "#general"
-#              ./read-issue.sh --dry-run
+# Usage:       ./read-issue.sh --channel "#medusa" --since "09:00" --before "10:02"
+#              ./read-issue.sh --channel "#medusa" --counter 2
 #              ./read-issue.sh --auto
-#              ./read-issue.sh --since "09:00" --before "10:02"
-#              ./read-issue.sh --skip-brainstorm   # /slack-read → /issue (no brainstorm)
+#              ./read-issue.sh --dry-run
 #
-# Flow:  claude /slack-read → tasks → brainstorm-issue.sh --stdin [--auto]
+# Flow:  claude /slack-read → task summary → claude /slack-report
 #
 # Requirements:
 #   - Claude CLI installed and authenticated
-#   - GitHub CLI (gh) installed and authenticated
 #   - slack-read skill available at .claude/skills/slack-read/
 # ==============================================================================
 
@@ -34,7 +31,6 @@ CHANNEL="#medusa-agent-swarm"
 SINCE=""
 BEFORE=""
 COUNTER=""
-SKIP_BRAINSTORM=""
 
 # Colors
 RED='\033[0;31m'
@@ -58,9 +54,8 @@ error() { log "ERROR" "${RED}$*${NC}"; }
 ARGS=("$@")
 for i in "${!ARGS[@]}"; do
     case "${ARGS[$i]}" in
-        --dry-run)          DRY_RUN="true" ;;
-        --auto)             AUTO_MODE="true" ;;
-        --skip-brainstorm)  SKIP_BRAINSTORM="true" ;;
+        --dry-run)  DRY_RUN="true" ;;
+        --auto)     AUTO_MODE="true" ;;
         --channel)
             [[ -n "${ARGS[$((i+1))]:-}" ]] && CHANNEL="${ARGS[$((i+1))]}"
             ;;
@@ -80,12 +75,10 @@ done
 # Pre-flight
 # ------------------------------------------------------------------------------
 
-for cmd in claude gh; do
-    if ! command -v "$cmd" &>/dev/null; then
-        error "Required: $cmd"
-        exit 1
-    fi
-done
+if ! command -v claude &>/dev/null; then
+    error "Required: claude"
+    exit 1
+fi
 
 info "Channel: $CHANNEL"
 
@@ -107,6 +100,7 @@ TIME_HINT=""
 
 if [[ "$DRY_RUN" == "true" ]]; then
     info "[DRY RUN] Would run: claude -p '/slack-read ${CHANNEL}${TIME_HINT}'"
+    info "[DRY RUN] Would run: claude -p '/slack-report <task summary>'"
     exit 0
 fi
 
@@ -125,43 +119,18 @@ echo -e "${GREEN}Tasks found:${NC}"
 echo "$SLACK_OUTPUT" | nl -ba
 echo ""
 
+# Save tasks to file for looper --brainstorm-prd to pick up
+TASKS_FILE="${LOG_DIR}/read-issue-tasks-$(date +%Y%m%d-%H%M%S).txt"
+echo "$SLACK_OUTPUT" > "$TASKS_FILE"
+info "Tasks saved: $TASKS_FILE"
+
 # ------------------------------------------------------------------------------
-# Phase 2: Pipe output into brainstorm-issue.sh
+# Phase 2: claude /slack-report → post summary to Slack
 # ------------------------------------------------------------------------------
 
-info "Phase 2: Creating issues from tasks..."
+info "Phase 2: claude /slack-report..."
 
-BRAINSTORM_SCRIPT="${SCRIPT_DIR}/brainstorm-issue.sh"
-if [[ ! -x "$BRAINSTORM_SCRIPT" ]]; then
-    error "brainstorm-issue.sh not found or not executable at: $BRAINSTORM_SCRIPT"
-    exit 1
-fi
+claude -p "/slack-report Tasks detected from ${CHANNEL}: ${SLACK_OUTPUT}" --model sonnet --effort low $CLAUDE_FLAGS 2>&1 | tee -a "$LOG_FILE" || true
 
-# Build brainstorm flags
-BRAINSTORM_FLAGS=""
-[[ "$AUTO_MODE" == "true" ]] && BRAINSTORM_FLAGS="$BRAINSTORM_FLAGS --auto"
-[[ "$SKIP_BRAINSTORM" == "true" ]] && BRAINSTORM_FLAGS="$BRAINSTORM_FLAGS --skip-brainstorm"
-
-# Confirm if not in auto mode
-if [[ "$AUTO_MODE" != "true" ]]; then
-    read -p "Create issues from these tasks? [Y/n] " confirm
-    if [[ "${confirm:-Y}" =~ ^[Nn] ]]; then
-        warn "Aborted by user"
-        info "Tasks saved in log: $LOG_FILE"
-        exit 0
-    fi
-fi
-
-# Process each task line — skill outputs [TYPE] description per line
-ISSUE_COUNT=0
-while IFS= read -r task; do
-    [[ -z "$task" ]] && continue
-    # Skip non-task lines — match [TYPE] anywhere (handles "1. **[FEATURE]**" format)
-    [[ ! "$task" =~ \[(BUG|FEATURE|ENHANCEMENT|CHORE|DOCS|TEST)\] ]] && continue
-    info "Processing: ${task:0:80}..."
-    echo "$task" | "$BRAINSTORM_SCRIPT" --stdin $BRAINSTORM_FLAGS 2>&1 | tee -a "$LOG_FILE"
-    ISSUE_COUNT=$((ISSUE_COUNT + 1))
-done <<< "$SLACK_OUTPUT"
-
-success "Created $ISSUE_COUNT issue(s)"
+success "Summary reported to Slack"
 info "Log: $LOG_FILE"
