@@ -47,7 +47,8 @@ Missing either = issue is ignored or misrouted.
 
 `looper.sh` is always stateless — scans and dispatches once per execution.
 `/loop` is the Claude Code built-in that re-runs it on interval.
-`--read-slack` runs `read-issue.sh` (claude /slack-read → brainstorm) before the label scan.
+`--read-slack` runs `read-issue.sh --auto` before the label scan.
+Supports `--channel`, `--since`, `--before` for narrowing the Slack reading window.
 After successful fix/ship/verify, `report-issue.sh` auto-reports to Slack.
 
 ---

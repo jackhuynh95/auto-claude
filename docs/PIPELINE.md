@@ -118,6 +118,7 @@ done
 ./looper.sh --label "ready_for_dev,ready_for_test"  # multiple labels
 ./looper.sh --limit 3                # cap at 3 issues
 ./looper.sh --read-slack             # read-issue.sh → brainstorm → issue, then pipeline
+./looper.sh --read-slack --channel "#medusa" --since "09:00" --before "10:02"  # time window
 ./looper.sh --read-slack --label ready_for_dev  # Slack read + single label
 ```
 
