@@ -186,7 +186,7 @@ if [[ "$AUTO_MODE" != "true" ]]; then
 fi
 
 # Run /issue via Claude — low effort, brainstorm already did the thinking
-ISSUE_OUTPUT=$(claude -p "$ISSUE_PROMPT" --model sonnet --effort low $CLAUDE_FLAGS 2>&1 | tee -a "$LOG_FILE")
+ISSUE_OUTPUT=$(claude -p "$ISSUE_PROMPT" --model sonnet --effort medium $CLAUDE_FLAGS 2>&1 | tee -a "$LOG_FILE")
 
 if [[ -n "$ISSUE_OUTPUT" ]]; then
     success "Issue creation complete"
