@@ -185,8 +185,8 @@ if [[ "$AUTO_MODE" != "true" ]]; then
     fi
 fi
 
-# Run /issue via Claude to create the GitHub issue
-ISSUE_OUTPUT=$(claude -p "$ISSUE_PROMPT" $CLAUDE_FLAGS 2>&1 | tee -a "$LOG_FILE")
+# Run /issue via Claude — low effort, brainstorm already did the thinking
+ISSUE_OUTPUT=$(claude -p "$ISSUE_PROMPT" --model sonnet --max-turns 10 $CLAUDE_FLAGS 2>&1 | tee -a "$LOG_FILE")
 
 if [[ -n "$ISSUE_OUTPUT" ]]; then
     success "Issue creation complete"
