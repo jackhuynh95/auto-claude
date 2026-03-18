@@ -46,6 +46,7 @@ SLACK_CHANNEL=""        # --channel: Slack channel for read-issue.sh
 SLACK_SINCE=""          # --since: time filter for read-issue.sh
 SLACK_BEFORE=""         # --before: time filter for read-issue.sh
 SLACK_COUNTER=""        # --counter: exact task count for read-issue.sh
+BRAINSTORM_PRD=""       # --brainstorm-prd: brainstorm tasks into GitHub issues
 
 # Run results tracking
 TOTAL_PROCESSED=0
@@ -89,6 +90,7 @@ for i in "${!ARGS[@]}"; do
         --counter)
             SLACK_COUNTER="${ARGS[$((i+1))]:-}"
             ;;
+        --brainstorm-prd) BRAINSTORM_PRD="true" ;;
     esac
 done
 
@@ -296,6 +298,41 @@ read_slack_tasks() {
     else
         warn "read-issue.sh failed or no tasks found"
     fi
+}
+
+# Brainstorm tasks into GitHub issues via brainstorm-issue.sh
+brainstorm_prd_tasks() {
+    if [[ ! -f "${SCRIPT_DIR}/brainstorm-issue.sh" ]]; then
+        warn "brainstorm-issue.sh not found — skipping brainstorm"
+        return
+    fi
+
+    # Find latest tasks file from read-issue.sh
+    local tasks_file=$(ls -t "${LOG_DIR}"/read-issue-tasks-*.txt 2>/dev/null | head -1)
+    if [[ -z "$tasks_file" ]]; then
+        warn "No tasks file found — run --read-slack first"
+        return
+    fi
+
+    info "Brainstorming tasks from: $tasks_file"
+
+    if [[ "$DRY_RUN" == "true" ]]; then
+        info "[DRY RUN] Would brainstorm each [TYPE] task from: $tasks_file"
+        cat "$tasks_file"
+        return
+    fi
+
+    local count=0
+    while IFS= read -r task; do
+        [[ -z "$task" ]] && continue
+        # Match [TYPE] anywhere in line
+        [[ ! "$task" =~ \[(BUG|FEATURE|ENHANCEMENT|CHORE|DOCS|TEST)\] ]] && continue
+        info "Brainstorming: ${task:0:80}..."
+        echo "$task" | bash "${SCRIPT_DIR}/brainstorm-issue.sh" --stdin --auto 2>&1 | tee -a "$LOG_FILE"
+        count=$((count + 1))
+    done < "$tasks_file"
+
+    success "Brainstormed $count task(s) into GitHub issues"
 }
 
 # Post report to Slack after fix/ship/verify
@@ -617,6 +654,11 @@ main() {
     # Phase 0: Read Slack for new tasks (if --read-slack)
     if [[ "$READ_SLACK" == "true" ]]; then
         read_slack_tasks
+    fi
+
+    # Phase 0.5: Brainstorm tasks into GitHub issues (if --brainstorm-prd)
+    if [[ "$BRAINSTORM_PRD" == "true" ]]; then
+        brainstorm_prd_tasks
     fi
 
     # Route based on filter or scan all pipeline labels
