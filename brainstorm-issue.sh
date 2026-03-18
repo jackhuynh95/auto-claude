@@ -162,8 +162,9 @@ fi
 
 info "Phase 2: claude /issue..."
 
-# Build /issue prompt with brainstorm context
-ISSUE_PROMPT="/issue ${BRAINSTORM_OUTPUT}"
+# Build /issue prompt — explicit instruction to create, not ask
+ISSUE_PROMPT="/issue Create a GitHub issue from this brainstorm. Do NOT ask questions — create the issue immediately with title, body, and labels (pipeline, ready_for_dev, plus type label). Brainstorm output:
+${BRAINSTORM_OUTPUT}"
 
 if [[ "$DRY_RUN" == "true" ]]; then
     info "[DRY RUN] Would run: claude -p '/issue <brainstorm output>'"
