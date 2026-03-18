@@ -156,8 +156,8 @@ fi
 ISSUE_COUNT=0
 while IFS= read -r task; do
     [[ -z "$task" ]] && continue
-    # Skip non-task lines (no [TYPE] prefix)
-    [[ ! "$task" =~ ^\[ ]] && continue
+    # Skip non-task lines — match [TYPE] anywhere (handles "1. **[FEATURE]**" format)
+    [[ ! "$task" =~ \[(BUG|FEATURE|ENHANCEMENT|CHORE|DOCS|TEST)\] ]] && continue
     info "Processing: ${task:0:80}..."
     echo "$task" | "$BRAINSTORM_SCRIPT" --stdin $BRAINSTORM_FLAGS 2>&1 | tee -a "$LOG_FILE"
     ISSUE_COUNT=$((ISSUE_COUNT + 1))
