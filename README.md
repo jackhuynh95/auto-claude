@@ -3,7 +3,8 @@
 Autonomous issue processing pipeline powered by Claude Code CLI + [ClaudeKit Engineer](https://github.com/claudekit).
 
 ```
-read-slack.sh → brainstorm-issue.sh → looper.sh → fix/ship → PR → report-issue.sh → Slack
+read-issue.sh → looper.sh → fix/ship → PR → report-issue.sh → Slack
+  (claude /slack-read → brainstorm-issue.sh → GitHub issue)
                                                    └─→ verify-issue.sh → e2e → verified
 ```
 
