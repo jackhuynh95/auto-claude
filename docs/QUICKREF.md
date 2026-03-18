@@ -47,7 +47,7 @@ Missing either = issue is ignored or misrouted.
 
 `looper.sh` is always stateless — scans and dispatches once per execution.
 `/loop` is the Claude Code built-in that re-runs it on interval.
-`--read-slack` runs `read-slack.sh` → `brainstorm-issue.sh` before the label scan.
+`--read-slack` runs `read-issue.sh` (claude /slack-read → brainstorm) before the label scan.
 After successful fix/ship/verify, `report-issue.sh` auto-reports to Slack.
 
 ---
@@ -89,7 +89,7 @@ done
 ## Pipeline Stages (Label Flow)
 
 ```
-read-slack.sh → brainstorm-issue.sh (claude /brainstorm → claude /issue)
+read-issue.sh (claude /slack-read → brainstorm-issue.sh → GitHub issue)
 ready_for_dev → fix-issue.sh / ship-issue.sh → ready_for_test
 ready_for_test → verify-issue.sh (e2e) → verified → closed
                                        → ready_for_dev (fail, re-queued)
