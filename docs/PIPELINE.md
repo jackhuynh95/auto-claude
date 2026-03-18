@@ -117,7 +117,7 @@ done
 ./looper.sh --label ready_for_dev    # single label only
 ./looper.sh --label "ready_for_dev,ready_for_test"  # multiple labels
 ./looper.sh --limit 3                # cap at 3 issues
-./looper.sh --read-slack             # read-issue.sh → brainstorm → issue, then pipeline
+./looper.sh --read-slack             # read Slack → brainstorm → issue, then pipeline
 ./looper.sh --read-slack --label ready_for_dev  # Slack read + single label
 ```
 
@@ -227,7 +227,6 @@ Saves ~60–70% tokens vs running everything on Opus.
 | `setup-labels.sh` | Create all pipeline labels on GitHub (run once) |
 | `looper-profiles.sh` | Custom scheduling profiles |
 | `test-only.sh` | Run Claude `/test` command standalone |
-| `read-issue.sh` | `claude /slack-read` → `brainstorm-issue.sh` → GitHub issue |
 | `brainstorm-issue.sh` | `claude /brainstorm` → `claude /issue` → GitHub issue |
 | `report-issue.sh` | Post-fix/ship reporting via `claude /slack-report` (extracts log summary) |
 | `/issue` | Create pipeline-ready GitHub issue (interactive or from brainstorm) |
@@ -242,19 +241,25 @@ Channel: `#medusa-agent-swarm`
 
 | Script | Purpose | Status |
 |--------|---------|--------|
-| `read-issue.sh` | `claude /slack-read` → `brainstorm-issue.sh` → GitHub issue | Active |
 | `brainstorm-issue.sh` | `claude /brainstorm` → `claude /issue` inline | Active |
 | `report-issue.sh` | Post-fix/ship reporting via `claude /slack-report` + log extraction | Active |
+| `read-slack.sh` | Read Slack channel (API / screenshot+OCR / paste) | Active |
 | `/uncle-report` | Daily summary for Thierry on log channel | Active |
+
+### Slack Reader (Planned)
+
+Three approaches in priority order:
+1. **agent-browser + Vercel Slack companion** — headless browser automation
+2. **Slack Bot API** (`conversations.history`) — requires bot token per workspace
+3. **Fallback: screenshot + OCR** — `screencapture` → `ai-multimodal` skill
 
 ### Full Loop
 
 ```
-read-issue.sh (claude /slack-read → brainstorm-issue.sh) → looper.sh → fix/ship → report-issue.sh → Slack
+read-slack.sh → brainstorm-issue.sh --stdin --auto → looper.sh → fix/ship → report-issue.sh → Slack
 ```
 
-All scripts use the inline Claude skill pattern: `claude -p "/skill-name <context>"`.
-Credentials managed by each skill's `.env`.
+`report-issue.sh` uses `claude -p "/slack-report ..."` inline (same pattern as ship-issue uses `/code:auto`). Credentials managed by the `/slack-report` skill's `.env`.
 
 ---
 

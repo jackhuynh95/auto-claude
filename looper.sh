@@ -18,7 +18,7 @@
 #   ./looper.sh --dry-run                # scan only
 #   ./looper.sh --limit 3               # cap per run
 #   ./looper.sh --profile overnight      # scheduling profile
-#   ./looper.sh --read-slack             # read-issue.sh → brainstorm → issue before pipeline
+#   ./looper.sh --read-slack             # read Slack → brainstorm → issue before pipeline
 #   ./looper.sh --read-slack --label ready_for_dev  # Slack + single label
 #
 # Via /loop (Claude Code built-in, runs prompt on interval):
@@ -253,25 +253,40 @@ transform_logs() {
 # Slack Reader + Report (new scripts integration)
 # ------------------------------------------------------------------------------
 
-# Read tasks from Slack and create issues via read-issue.sh
+# Read tasks from Slack and create issues via brainstorm-issue.sh
 read_slack_tasks() {
-    if [[ ! -f "${SCRIPT_DIR}/read-issue.sh" ]]; then
-        warn "read-issue.sh not found — skipping Slack read"
+    if [[ ! -f "${SCRIPT_DIR}/read-slack.sh" ]]; then
+        warn "read-slack.sh not found — skipping Slack read"
         return
     fi
 
-    info "Reading tasks from Slack via read-issue.sh..."
+    info "Reading tasks from Slack..."
 
     if [[ "$DRY_RUN" == "true" ]]; then
-        info "[DRY RUN] Would run: read-issue.sh --auto"
+        info "[DRY RUN] Would run: read-slack.sh --pipe | brainstorm-issue.sh --stdin --auto"
         return
     fi
 
-    if bash "${SCRIPT_DIR}/read-issue.sh" --auto 2>&1 | tee -a "$LOG_FILE"; then
-        success "Slack read → issue creation complete"
-    else
-        warn "read-issue.sh failed or no tasks found"
+    local tasks=$(bash "${SCRIPT_DIR}/read-slack.sh" --pipe 2>/dev/null || echo "")
+
+    if [[ -z "$tasks" ]]; then
+        info "No tasks found from Slack"
+        return
     fi
+
+    local count=$(echo "$tasks" | wc -l | xargs)
+    info "Found $count task(s) from Slack"
+
+    # Feed each task into brainstorm-issue.sh
+    while IFS= read -r task; do
+        [[ -z "$task" ]] && continue
+        info "Creating issue from: ${task:0:60}..."
+        if bash "${SCRIPT_DIR}/brainstorm-issue.sh" "$task" --auto 2>&1 | tee -a "$LOG_FILE"; then
+            success "Issue created from Slack task"
+        else
+            warn "Failed to create issue from: ${task:0:60}"
+        fi
+    done <<< "$tasks"
 }
 
 # Post report to Slack after fix/ship/verify
