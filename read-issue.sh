@@ -9,6 +9,7 @@
 #              ./read-issue.sh --channel "#general"
 #              ./read-issue.sh --dry-run
 #              ./read-issue.sh --auto
+#              ./read-issue.sh --since "09:00" --before "10:02"
 #              ./read-issue.sh --skip-brainstorm   # /slack-read → /issue (no brainstorm)
 #
 # Flow:  claude /slack-read → tasks → brainstorm-issue.sh --stdin [--auto]
@@ -31,6 +32,7 @@ DRY_RUN=""
 AUTO_MODE=""
 CHANNEL="#medusa-agent-swarm"
 SINCE=""
+BEFORE=""
 SKIP_BRAINSTORM=""
 
 # Colors
@@ -64,6 +66,9 @@ for i in "${!ARGS[@]}"; do
         --since)
             [[ -n "${ARGS[$((i+1))]:-}" ]] && SINCE="${ARGS[$((i+1))]}"
             ;;
+        --before)
+            [[ -n "${ARGS[$((i+1))]:-}" ]] && BEFORE="${ARGS[$((i+1))]}"
+            ;;
     esac
 done
 
@@ -90,16 +95,17 @@ CLAUDE_FLAGS="--output-format text"
 
 info "Phase 1: claude /slack-read..."
 
-# Build slack-read prompt with optional --since
-SINCE_HINT=""
-[[ -n "$SINCE" ]] && SINCE_HINT=" since ${SINCE}"
+# Build slack-read prompt with optional time window
+TIME_HINT=""
+[[ -n "$SINCE" ]] && TIME_HINT=" since ${SINCE}"
+[[ -n "$BEFORE" ]] && TIME_HINT="${TIME_HINT} before ${BEFORE}"
 
 if [[ "$DRY_RUN" == "true" ]]; then
-    info "[DRY RUN] Would run: claude -p '/slack-read ${CHANNEL}${SINCE_HINT}'"
+    info "[DRY RUN] Would run: claude -p '/slack-read ${CHANNEL}${TIME_HINT}'"
     exit 0
 fi
 
-SLACK_OUTPUT=$(claude -p "/slack-read ${CHANNEL}${SINCE_HINT}" $CLAUDE_FLAGS 2>&1 | tee -a "$LOG_FILE")
+SLACK_OUTPUT=$(claude -p "/slack-read ${CHANNEL}${TIME_HINT}" $CLAUDE_FLAGS 2>&1 | tee -a "$LOG_FILE")
 
 if [[ -z "$SLACK_OUTPUT" ]] || echo "$SLACK_OUTPUT" | grep -qi "no.*tasks\|no.*messages\|no.*actionable"; then
     warn "No actionable tasks found in $CHANNEL"
@@ -141,14 +147,8 @@ if [[ "$AUTO_MODE" != "true" ]]; then
     fi
 fi
 
-# Process each task line — one brainstorm-issue per task
-ISSUE_COUNT=0
-while IFS= read -r task; do
-    [[ -z "$task" ]] && continue
-    info "Processing: ${task:0:80}..."
-    echo "$task" | "$BRAINSTORM_SCRIPT" --stdin $BRAINSTORM_FLAGS 2>&1 | tee -a "$LOG_FILE"
-    ISSUE_COUNT=$((ISSUE_COUNT + 1))
-done <<< "$SLACK_OUTPUT"
+# Pipe all output as one blob — Claude skill extracts individual tasks
+echo "$SLACK_OUTPUT" | "$BRAINSTORM_SCRIPT" --stdin $BRAINSTORM_FLAGS 2>&1 | tee -a "$LOG_FILE"
 
-success "Created $ISSUE_COUNT issue(s)"
+success "Issue creation complete"
 info "Log: $LOG_FILE"
