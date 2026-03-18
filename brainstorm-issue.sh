@@ -143,7 +143,7 @@ if [[ "$SKIP_BRAINSTORM" != "true" ]]; then
         exit 0
     fi
 
-    BRAINSTORM_OUTPUT=$(claude -p "/brainstorm ${TASK_INPUT}${TYPE_HINT}" --model opus $CLAUDE_FLAGS 2>&1 | tee -a "$LOG_FILE")
+    BRAINSTORM_OUTPUT=$(claude -p "/brainstorm ${TASK_INPUT}${TYPE_HINT}" --model opus --max-turns 50 $CLAUDE_FLAGS 2>&1 | tee -a "$LOG_FILE")
 
     if [[ -z "$BRAINSTORM_OUTPUT" ]]; then
         error "Brainstorm failed — no output from Claude"
