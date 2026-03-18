@@ -132,16 +132,21 @@ fi
 TYPE_HINT=""
 [[ -n "$ISSUE_TYPE" ]] && TYPE_HINT="Type hint: ${ISSUE_TYPE}. "
 
-PROMPT="You have ${TASK_COUNT} task(s) to process. For EACH task:
+PROMPT="You have ${TASK_COUNT} task(s) below. Process each task sequentially:
 
-Step 1: Activate /brainstorm skill — deep analysis of the task
-Step 2: Activate /issue skill — create a GitHub issue with labels (pipeline, ready_for_dev, plus type label)
+STEP 1: Run /brainstorm on the task — analyze deeply, produce a structured brainstorm output.
+STEP 2: Run /issue using the brainstorm output — this MUST create a real GitHub issue using gh CLI.
+         Use labels: pipeline, ready_for_dev, and the appropriate type label (bug, enhancement, chore, etc).
+         Do NOT ask for confirmation or label selection — pick the best labels and create immediately.
+STEP 3: After the issue is created, print the URL in bold: **#N https://github.com/.../issues/N**
 
-${TYPE_HINT}Tasks:
+Repeat steps 1-3 for each task.
+
+${TYPE_HINT}Here are the ${TASK_COUNT} task(s):
+
 ${TASK_INPUT}
 
-IMPORTANT: Create ALL ${TASK_COUNT} GitHub issue(s). After creating each issue, output the issue URL in bold: **https://github.com/...issues/N**
-At the end, output a summary line: **Created N issue(s)**"
+After ALL tasks are done, print: **Created ${TASK_COUNT} issue(s)**"
 
 if [[ "$DRY_RUN" == "true" ]]; then
     info "[DRY RUN] Would run single claude session with /brainstorm → /issue"
