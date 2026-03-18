@@ -201,14 +201,19 @@ If all retries exhausted, falls back to `--codex` or `--opencode` if specified.
 
 ---
 
-## Model Routing
+## Model & Effort Routing
 
-| Task | Model | Why |
-|------|-------|-----|
-| `/plan`, `/debug`, `/brainstorm`, `/frontend-design` | Opus | Reasoning |
-| `/code`, `/fix`, `/cook`, `e2e-test` | Sonnet | Execution |
-| `--hard` fix | Opus | Complex bug analysis |
-| `--model <override>` | Your choice | All phases |
+| Task | Model | Effort | Why |
+|------|-------|--------|-----|
+| `/brainstorm` | Opus | max | Deep reasoning, ideation |
+| `/plan`, `/debug`, `/frontend-design` | Opus | high | Reasoning |
+| `/issue` | Sonnet | medium | Format & ship to GitHub |
+| `/code`, `/fix`, `/cook`, `e2e-test` | Sonnet | default | Execution |
+| `--hard` fix | Opus | high | Complex bug analysis |
+| `/slack-read`, `/slack-report` | Sonnet | default | Read/write Slack |
+| `--model <override>` | Your choice | — | All phases |
+
+**Effort levels** (`--effort` flag): `low` → `medium` → `high` → `max` (Opus 4.6 only for max).
 
 Saves ~60–70% tokens vs running everything on Opus.
 

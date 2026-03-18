@@ -98,12 +98,14 @@ verified/closed → report-issue.sh → Slack
 
 ---
 
-## Model Routing
+## Model & Effort Routing
 
-| Phase | Model |
-|---|---|
-| `/plan`, `/debug`, `/brainstorm` | Opus |
-| `/fix`, `/code`, `e2e-test` | Sonnet |
-| `--hard` flag | Opus |
+| Phase | Model | Effort |
+|---|---|---|
+| `/brainstorm` | Opus | max |
+| `/plan`, `/debug` | Opus | high |
+| `/issue` | Sonnet | medium |
+| `/fix`, `/code`, `e2e-test` | Sonnet | default |
+| `--hard` flag | Opus | high |
 
-Saves ~60–70% tokens vs all-Opus.
+Effort: `low` → `medium` → `high` → `max`. Saves ~60–70% tokens vs all-Opus.
