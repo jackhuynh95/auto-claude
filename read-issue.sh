@@ -114,17 +114,40 @@ fi
 
 success "Tasks extracted from Slack"
 
-# Show tasks
+# Filter to [TYPE] task lines only
+TASKS=""
+while IFS= read -r line; do
+    [[ "$line" =~ ^\[ ]] && TASKS="${TASKS}${line}\n"
+done <<< "$SLACK_OUTPUT"
+TASKS=$(echo -e "$TASKS" | sed '/^$/d')
+
+if [[ -z "$TASKS" ]]; then
+    warn "No [TYPE] task lines found in output"
+    exit 0
+fi
+
+# Show filtered tasks
+TASK_COUNT=$(echo "$TASKS" | wc -l | xargs)
 echo ""
-echo -e "${GREEN}Tasks found:${NC}"
-echo "$SLACK_OUTPUT" | nl -ba
+echo -e "${GREEN}${TASK_COUNT} task(s) detected:${NC}"
+echo "$TASKS" | nl -ba
 echo ""
 
+# Confirm before brainstorming (skipped in --auto mode)
+if [[ "$AUTO_MODE" != "true" ]]; then
+    read -p "Brainstorm and create issues from these tasks? [Y/n] " confirm
+    if [[ "${confirm:-Y}" =~ ^[Nn] ]]; then
+        warn "Aborted by user"
+        info "Tasks saved in log: $LOG_FILE"
+        exit 0
+    fi
+fi
+
 # ------------------------------------------------------------------------------
-# Phase 2: Pipe output into brainstorm-issue.sh
+# Phase 2: brainstorm-issue.sh per task
 # ------------------------------------------------------------------------------
 
-info "Phase 2: Creating issues from tasks..."
+info "Phase 2: Creating issues from ${TASK_COUNT} task(s)..."
 
 BRAINSTORM_SCRIPT="${SCRIPT_DIR}/brainstorm-issue.sh"
 if [[ ! -x "$BRAINSTORM_SCRIPT" ]]; then
@@ -137,26 +160,13 @@ BRAINSTORM_FLAGS=""
 [[ "$AUTO_MODE" == "true" ]] && BRAINSTORM_FLAGS="$BRAINSTORM_FLAGS --auto"
 [[ "$SKIP_BRAINSTORM" == "true" ]] && BRAINSTORM_FLAGS="$BRAINSTORM_FLAGS --skip-brainstorm"
 
-# Confirm if not in auto mode
-if [[ "$AUTO_MODE" != "true" ]]; then
-    read -p "Create issues from these tasks? [Y/n] " confirm
-    if [[ "${confirm:-Y}" =~ ^[Nn] ]]; then
-        warn "Aborted by user"
-        info "Tasks saved in log: $LOG_FILE"
-        exit 0
-    fi
-fi
-
-# Process each task line — skill outputs [TYPE] description per line
 ISSUE_COUNT=0
 while IFS= read -r task; do
     [[ -z "$task" ]] && continue
-    # Skip non-task lines (no [TYPE] prefix)
-    [[ ! "$task" =~ ^\[ ]] && continue
     info "Processing: ${task:0:80}..."
     echo "$task" | "$BRAINSTORM_SCRIPT" --stdin $BRAINSTORM_FLAGS 2>&1 | tee -a "$LOG_FILE"
     ISSUE_COUNT=$((ISSUE_COUNT + 1))
-done <<< "$SLACK_OUTPUT"
+done <<< "$TASKS"
 
 success "Created $ISSUE_COUNT issue(s)"
 info "Log: $LOG_FILE"
