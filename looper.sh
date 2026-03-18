@@ -317,22 +317,15 @@ brainstorm_prd_tasks() {
     info "Brainstorming tasks from: $tasks_file"
 
     if [[ "$DRY_RUN" == "true" ]]; then
-        info "[DRY RUN] Would brainstorm each [TYPE] task from: $tasks_file"
+        info "[DRY RUN] Would brainstorm all tasks from: $tasks_file"
         cat "$tasks_file"
         return
     fi
 
-    local count=0
-    while IFS= read -r task; do
-        [[ -z "$task" ]] && continue
-        # Match [TYPE] anywhere in line
-        [[ ! "$task" =~ \[(BUG|FEATURE|ENHANCEMENT|CHORE|DOCS|TEST)\] ]] && continue
-        info "Brainstorming: ${task:0:80}..."
-        echo "$task" | bash "${SCRIPT_DIR}/brainstorm-issue.sh" --stdin --auto 2>&1 | tee -a "$LOG_FILE"
-        count=$((count + 1))
-    done < "$tasks_file"
+    # Pass whole file at once — single claude session handles all tasks
+    bash "${SCRIPT_DIR}/brainstorm-issue.sh" --file "$tasks_file" --auto 2>&1 | tee -a "$LOG_FILE"
 
-    success "Brainstormed $count task(s) into GitHub issues"
+    success "Brainstorm + issue creation complete"
 }
 
 # Post report to Slack after fix/ship/verify
