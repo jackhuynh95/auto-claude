@@ -19,6 +19,7 @@
 #   ./looper.sh --limit 3               # cap per run
 #   ./looper.sh --profile overnight      # scheduling profile
 #   ./looper.sh --read-slack             # read-issue.sh → brainstorm → issue before pipeline
+#   ./looper.sh --read-slack --channel "#medusa"  # read specific channel
 #   ./looper.sh --read-slack --label ready_for_dev  # Slack + single label
 #
 # Via /loop (Claude Code built-in, runs prompt on interval):
@@ -41,6 +42,7 @@ LIMIT=10
 FILTER_LABEL=""
 PROFILE=""
 READ_SLACK=""           # --read-slack: scan Slack before pipeline run
+SLACK_CHANNEL=""        # --channel: Slack channel for read-issue.sh
 
 # Run results tracking
 TOTAL_PROCESSED=0
@@ -72,6 +74,9 @@ for i in "${!ARGS[@]}"; do
             PROFILE="${ARGS[$((i+1))]:-}"
             ;;
         --read-slack) READ_SLACK="true" ;;
+        --channel)
+            SLACK_CHANNEL="${ARGS[$((i+1))]:-}"
+            ;;
     esac
 done
 
@@ -260,14 +265,18 @@ read_slack_tasks() {
         return
     fi
 
-    info "Reading tasks from Slack via read-issue.sh..."
+    # Build channel flag
+    local channel_flag=""
+    [[ -n "$SLACK_CHANNEL" ]] && channel_flag="--channel $SLACK_CHANNEL"
+
+    info "Reading tasks from Slack via read-issue.sh... ${SLACK_CHANNEL:-#medusa-agent-swarm}"
 
     if [[ "$DRY_RUN" == "true" ]]; then
-        info "[DRY RUN] Would run: read-issue.sh --auto"
+        info "[DRY RUN] Would run: read-issue.sh --auto $channel_flag"
         return
     fi
 
-    if bash "${SCRIPT_DIR}/read-issue.sh" --auto 2>&1 | tee -a "$LOG_FILE"; then
+    if bash "${SCRIPT_DIR}/read-issue.sh" --auto $channel_flag 2>&1 | tee -a "$LOG_FILE"; then
         success "Slack read → issue creation complete"
     else
         warn "read-issue.sh failed or no tasks found"
