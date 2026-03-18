@@ -200,7 +200,7 @@ read_via_screenshot() {
     # Use Claude vision to extract text from screenshot
     local ocr_output=$(claude -p "Extract all task/message text from this Slack screenshot. Output each distinct task or message on its own line, stripped of usernames and timestamps. Only include actionable items (tasks, bugs, feature requests). Skip greetings, reactions, and status messages.
 
-If no actionable tasks found, output: NO_TASKS_FOUND" --model sonnet "$screenshot_file" 2>/dev/null)
+If no actionable tasks found, output: NO_TASKS_FOUND" --model sonnet --image "$screenshot_file" 2>/dev/null)
 
     if [[ -z "$ocr_output" ]] || [[ "$ocr_output" == "NO_TASKS_FOUND" ]]; then
         warn "No actionable tasks found in screenshot"
