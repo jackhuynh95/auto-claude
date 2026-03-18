@@ -143,7 +143,7 @@ if [[ "$SKIP_BRAINSTORM" != "true" ]]; then
         exit 0
     fi
 
-    BRAINSTORM_OUTPUT=$(claude -p "/brainstorm ${TASK_INPUT}${TYPE_HINT}" --model opus --max-turns 50 $CLAUDE_FLAGS 2>&1 | tee -a "$LOG_FILE")
+    BRAINSTORM_OUTPUT=$(claude -p "/brainstorm ${TASK_INPUT}${TYPE_HINT}" --model opus --effort max $CLAUDE_FLAGS 2>&1 | tee -a "$LOG_FILE")
 
     if [[ -z "$BRAINSTORM_OUTPUT" ]]; then
         error "Brainstorm failed — no output from Claude"
@@ -186,7 +186,7 @@ if [[ "$AUTO_MODE" != "true" ]]; then
 fi
 
 # Run /issue via Claude — low effort, brainstorm already did the thinking
-ISSUE_OUTPUT=$(claude -p "$ISSUE_PROMPT" --model sonnet --max-turns 10 $CLAUDE_FLAGS 2>&1 | tee -a "$LOG_FILE")
+ISSUE_OUTPUT=$(claude -p "$ISSUE_PROMPT" --model sonnet --effort low $CLAUDE_FLAGS 2>&1 | tee -a "$LOG_FILE")
 
 if [[ -n "$ISSUE_OUTPUT" ]]; then
     success "Issue creation complete"
