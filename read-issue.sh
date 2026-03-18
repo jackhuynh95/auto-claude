@@ -147,8 +147,16 @@ if [[ "$AUTO_MODE" != "true" ]]; then
     fi
 fi
 
-# Pipe all output as one blob — Claude skill extracts individual tasks
-echo "$SLACK_OUTPUT" | "$BRAINSTORM_SCRIPT" --stdin $BRAINSTORM_FLAGS 2>&1 | tee -a "$LOG_FILE"
+# Process each task line — skill outputs [TYPE] description per line
+ISSUE_COUNT=0
+while IFS= read -r task; do
+    [[ -z "$task" ]] && continue
+    # Skip non-task lines (no [TYPE] prefix)
+    [[ ! "$task" =~ ^\[ ]] && continue
+    info "Processing: ${task:0:80}..."
+    echo "$task" | "$BRAINSTORM_SCRIPT" --stdin $BRAINSTORM_FLAGS 2>&1 | tee -a "$LOG_FILE"
+    ISSUE_COUNT=$((ISSUE_COUNT + 1))
+done <<< "$SLACK_OUTPUT"
 
-success "Issue creation complete"
+success "Created $ISSUE_COUNT issue(s)"
 info "Log: $LOG_FILE"
