@@ -45,6 +45,7 @@ READ_SLACK=""           # --read-slack: scan Slack before pipeline run
 SLACK_CHANNEL=""        # --channel: Slack channel for read-issue.sh
 SLACK_SINCE=""          # --since: time filter for read-issue.sh
 SLACK_BEFORE=""         # --before: time filter for read-issue.sh
+SLACK_COUNTER=""        # --counter: exact task count for read-issue.sh
 
 # Run results tracking
 TOTAL_PROCESSED=0
@@ -84,6 +85,9 @@ for i in "${!ARGS[@]}"; do
             ;;
         --before)
             SLACK_BEFORE="${ARGS[$((i+1))]:-}"
+            ;;
+        --counter)
+            SLACK_COUNTER="${ARGS[$((i+1))]:-}"
             ;;
     esac
 done
@@ -278,8 +282,9 @@ read_slack_tasks() {
     [[ -n "$SLACK_CHANNEL" ]] && extra_flags="$extra_flags --channel $SLACK_CHANNEL"
     [[ -n "$SLACK_SINCE" ]] && extra_flags="$extra_flags --since \"$SLACK_SINCE\""
     [[ -n "$SLACK_BEFORE" ]] && extra_flags="$extra_flags --before \"$SLACK_BEFORE\""
+    [[ -n "$SLACK_COUNTER" ]] && extra_flags="$extra_flags --counter $SLACK_COUNTER"
 
-    info "Reading tasks from Slack via read-issue.sh... ${SLACK_CHANNEL:-#medusa-agent-swarm} ${SLACK_SINCE:+(since $SLACK_SINCE)} ${SLACK_BEFORE:+(before $SLACK_BEFORE)}"
+    info "Reading tasks from Slack via read-issue.sh... ${SLACK_CHANNEL:-#medusa-agent-swarm} ${SLACK_SINCE:+(since $SLACK_SINCE)} ${SLACK_BEFORE:+(before $SLACK_BEFORE)} ${SLACK_COUNTER:+(counter $SLACK_COUNTER)}"
 
     if [[ "$DRY_RUN" == "true" ]]; then
         info "[DRY RUN] Would run: read-issue.sh --auto $extra_flags"

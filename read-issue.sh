@@ -33,6 +33,7 @@ AUTO_MODE=""
 CHANNEL="#medusa-agent-swarm"
 SINCE=""
 BEFORE=""
+COUNTER=""
 SKIP_BRAINSTORM=""
 
 # Colors
@@ -69,6 +70,9 @@ for i in "${!ARGS[@]}"; do
         --before)
             [[ -n "${ARGS[$((i+1))]:-}" ]] && BEFORE="${ARGS[$((i+1))]}"
             ;;
+        --counter)
+            [[ -n "${ARGS[$((i+1))]:-}" ]] && COUNTER="${ARGS[$((i+1))]}"
+            ;;
     esac
 done
 
@@ -99,6 +103,7 @@ info "Phase 1: claude /slack-read..."
 TIME_HINT=""
 [[ -n "$SINCE" ]] && TIME_HINT=" since ${SINCE}"
 [[ -n "$BEFORE" ]] && TIME_HINT="${TIME_HINT} before ${BEFORE}"
+[[ -n "$COUNTER" ]] && TIME_HINT="${TIME_HINT} --counter ${COUNTER}"
 
 if [[ "$DRY_RUN" == "true" ]]; then
     info "[DRY RUN] Would run: claude -p '/slack-read ${CHANNEL}${TIME_HINT}'"
