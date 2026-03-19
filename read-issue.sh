@@ -104,7 +104,7 @@ if [[ "$DRY_RUN" == "true" ]]; then
     exit 0
 fi
 
-SLACK_OUTPUT=$(claude -p "/slack-read ${CHANNEL}${TIME_HINT}" --model sonnet --effort high $CLAUDE_FLAGS 2>&1 | tee -a "$LOG_FILE")
+SLACK_OUTPUT=$(claude -p "/slack-read ${CHANNEL}${TIME_HINT}. READ ONLY — extract tasks, do NOT investigate, fix, or take any action." --model opus --effort medium $CLAUDE_FLAGS 2>&1 | tee -a "$LOG_FILE")
 
 if [[ -z "$SLACK_OUTPUT" ]] || echo "$SLACK_OUTPUT" | grep -qi "no.*tasks\|no.*messages\|no.*actionable"; then
     warn "No actionable tasks found in $CHANNEL"
