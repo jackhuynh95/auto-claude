@@ -322,30 +322,30 @@ brainstorm_prd_tasks() {
         return
     fi
 
-    # Loop per task — one brainstorm-issue.sh per task entry
+    # Split tasks file by --- separator, process each block with [TYPE]
     local count=0
-    local task_block=""
+    local block=""
+
     while IFS= read -r line || [[ -n "$line" ]]; do
-        # Detect task boundary: line containing [TYPE]
-        if [[ "$line" =~ \[(BUG|FEATURE|ENHANCEMENT|CHORE|DOCS|TEST)\] ]]; then
-            # Process previous task block if exists
-            if [[ -n "$task_block" ]]; then
-                info "Brainstorming task $count: ${task_block%%$'\n'*}"
-                echo "$task_block" | bash "${SCRIPT_DIR}/brainstorm-issue.sh" --stdin --auto 2>&1 | tee -a "$LOG_FILE"
+        if [[ "$line" == "---" && -n "$block" ]]; then
+            # Check if block contains a [TYPE] marker
+            if echo "$block" | grep -qE '\[(BUG|FEATURE|ENHANCEMENT|CHORE|DOCS|TEST)\]'; then
+                count=$((count + 1))
+                info "Brainstorming task $count..."
+                echo "$block" | bash "${SCRIPT_DIR}/brainstorm-issue.sh" --stdin --auto 2>&1 | tee -a "$LOG_FILE"
             fi
-            count=$((count + 1))
-            task_block="$line"
-        elif [[ -n "$task_block" ]]; then
-            # Append context lines to current task block
-            task_block="${task_block}
-${line}"
+            block=""
+        else
+            block="${block}${line}
+"
         fi
     done < "$tasks_file"
 
-    # Process last task block
-    if [[ -n "$task_block" ]]; then
-        info "Brainstorming task $count: ${task_block%%$'\n'*}"
-        echo "$task_block" | bash "${SCRIPT_DIR}/brainstorm-issue.sh" --stdin --auto 2>&1 | tee -a "$LOG_FILE"
+    # Process last block
+    if echo "$block" | grep -qE '\[(BUG|FEATURE|ENHANCEMENT|CHORE|DOCS|TEST)\]'; then
+        count=$((count + 1))
+        info "Brainstorming task $count..."
+        echo "$block" | bash "${SCRIPT_DIR}/brainstorm-issue.sh" --stdin --auto 2>&1 | tee -a "$LOG_FILE"
     fi
 
     success "Brainstormed $count task(s) into GitHub issues"
