@@ -162,8 +162,9 @@ fi
 
 info "Phase 2: claude /issue..."
 
-# Build /issue prompt with brainstorm context
-ISSUE_PROMPT="/issue ${BRAINSTORM_OUTPUT}"
+# Build /issue prompt — AUTO-MODE signal for /issue skill
+ISSUE_PROMPT="/issue AUTO-MODE: create immediately, do NOT ask for confirmation.
+${BRAINSTORM_OUTPUT}"
 
 if [[ "$DRY_RUN" == "true" ]]; then
     info "[DRY RUN] Would run: claude -p '/issue <brainstorm output>'"
