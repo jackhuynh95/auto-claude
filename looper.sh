@@ -673,9 +673,12 @@ main() {
     fi
 
     # Phase 0.5: Brainstorm tasks into GitHub issues (if --brainstorm-prd)
-    # Standalone phase — exits after brainstorming, does not continue to label scan
     if [[ "$BRAINSTORM_PRD" == "true" ]]; then
         brainstorm_prd_tasks
+    fi
+
+    # Standalone phases — stop here, don't continue to label scan
+    if [[ "$READ_SLACK" == "true" || "$BRAINSTORM_PRD" == "true" ]]; then
         return
     fi
 
