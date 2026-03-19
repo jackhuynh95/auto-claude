@@ -322,31 +322,34 @@ brainstorm_prd_tasks() {
         return
     fi
 
-    # Split tasks file by --- separator, process each block with [TYPE]
+    # Split tasks by --- separator, or treat whole file as one task
     local count=0
+    local blocks=()
     local block=""
 
     while IFS= read -r line || [[ -n "$line" ]]; do
-        if [[ "$line" == "---" && -n "$block" ]]; then
-            # Check if block contains a [TYPE] marker
-            if echo "$block" | grep -qE '\[(BUG|FEATURE|ENHANCEMENT|CHORE|DOCS|TEST)\]'; then
-                count=$((count + 1))
-                info "Brainstorming task $count..."
-                echo "$block" | bash "${SCRIPT_DIR}/brainstorm-issue.sh" --stdin --auto 2>&1 | tee -a "$LOG_FILE"
-            fi
+        if [[ "$line" == "---" ]]; then
+            [[ -n "$(echo "$block" | tr -d '[:space:]')" ]] && blocks+=("$block")
             block=""
         else
             block="${block}${line}
 "
         fi
     done < "$tasks_file"
+    # Last block
+    [[ -n "$(echo "$block" | tr -d '[:space:]')" ]] && blocks+=("$block")
 
-    # Process last block
-    if echo "$block" | grep -qE '\[(BUG|FEATURE|ENHANCEMENT|CHORE|DOCS|TEST)\]'; then
-        count=$((count + 1))
-        info "Brainstorming task $count..."
-        echo "$block" | bash "${SCRIPT_DIR}/brainstorm-issue.sh" --stdin --auto 2>&1 | tee -a "$LOG_FILE"
+    # If no --- separators found, treat whole file as one task
+    if [[ ${#blocks[@]} -eq 0 ]]; then
+        blocks=("$(cat "$tasks_file")")
     fi
+
+    for task_block in "${blocks[@]}"; do
+        [[ -z "$(echo "$task_block" | tr -d '[:space:]')" ]] && continue
+        count=$((count + 1))
+        info "Brainstorming task $count of ${#blocks[@]}..."
+        echo "$task_block" | bash "${SCRIPT_DIR}/brainstorm-issue.sh" --stdin --auto 2>&1 | tee -a "$LOG_FILE"
+    done
 
     success "Brainstormed $count task(s) into GitHub issues"
 }
