@@ -120,7 +120,7 @@ echo "$SLACK_OUTPUT" | nl -ba
 echo ""
 
 # Save tasks to file for looper --brainstorm-prd to pick up
-TASKS_FILE="${LOG_DIR}/read-issue-tasks-$(date +%Y%m%d-%H%M%S).txt"
+TASKS_FILE="${LOG_DIR}/read-issue-tasks-$(date +%Y%m%d-%H%M%S).md"
 echo "$SLACK_OUTPUT" > "$TASKS_FILE"
 info "Tasks saved: $TASKS_FILE"
 

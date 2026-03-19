@@ -308,7 +308,7 @@ brainstorm_prd_tasks() {
     fi
 
     # Find latest tasks file from read-issue.sh
-    local tasks_file=$(ls -t "${LOG_DIR}"/read-issue-tasks-*.txt 2>/dev/null | head -1)
+    local tasks_file=$(ls -t "${LOG_DIR}"/read-issue-tasks-*.md 2>/dev/null | head -1)
     if [[ -z "$tasks_file" ]]; then
         warn "No tasks file found — run --read-slack first"
         return
