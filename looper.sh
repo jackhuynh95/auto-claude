@@ -317,15 +317,38 @@ brainstorm_prd_tasks() {
     info "Brainstorming tasks from: $tasks_file"
 
     if [[ "$DRY_RUN" == "true" ]]; then
-        info "[DRY RUN] Would brainstorm all tasks from: $tasks_file"
+        info "[DRY RUN] Would brainstorm each task from: $tasks_file"
         cat "$tasks_file"
         return
     fi
 
-    # Pass whole file at once — single claude session handles all tasks
-    bash "${SCRIPT_DIR}/brainstorm-issue.sh" --file "$tasks_file" --auto 2>&1 | tee -a "$LOG_FILE"
+    # Loop per task — one brainstorm-issue.sh per task entry
+    local count=0
+    local task_block=""
+    while IFS= read -r line || [[ -n "$line" ]]; do
+        # Detect task boundary: line containing [TYPE]
+        if [[ "$line" =~ \[(BUG|FEATURE|ENHANCEMENT|CHORE|DOCS|TEST)\] ]]; then
+            # Process previous task block if exists
+            if [[ -n "$task_block" ]]; then
+                info "Brainstorming task $count: ${task_block%%$'\n'*}"
+                echo "$task_block" | bash "${SCRIPT_DIR}/brainstorm-issue.sh" --stdin --auto 2>&1 | tee -a "$LOG_FILE"
+            fi
+            count=$((count + 1))
+            task_block="$line"
+        elif [[ -n "$task_block" ]]; then
+            # Append context lines to current task block
+            task_block="${task_block}
+${line}"
+        fi
+    done < "$tasks_file"
 
-    success "Brainstorm + issue creation complete"
+    # Process last task block
+    if [[ -n "$task_block" ]]; then
+        info "Brainstorming task $count: ${task_block%%$'\n'*}"
+        echo "$task_block" | bash "${SCRIPT_DIR}/brainstorm-issue.sh" --stdin --auto 2>&1 | tee -a "$LOG_FILE"
+    fi
+
+    success "Brainstormed $count task(s) into GitHub issues"
 }
 
 # Post report to Slack after fix/ship/verify
