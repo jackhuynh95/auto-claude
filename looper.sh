@@ -673,8 +673,10 @@ main() {
     fi
 
     # Phase 0.5: Brainstorm tasks into GitHub issues (if --brainstorm-prd)
+    # Standalone phase — exits after brainstorming, does not continue to label scan
     if [[ "$BRAINSTORM_PRD" == "true" ]]; then
         brainstorm_prd_tasks
+        return
     fi
 
     # Route based on filter or scan all pipeline labels
