@@ -117,9 +117,10 @@ done
 ./looper.sh --label ready_for_dev    # single label only
 ./looper.sh --label "ready_for_dev,ready_for_test"  # multiple labels
 ./looper.sh --limit 3                # cap at 3 issues
-./looper.sh --read-slack             # read-issue.sh → brainstorm → issue, then pipeline
-./looper.sh --read-slack --channel "#medusa" --since "09:00" --before "10:02"  # time window
-./looper.sh --read-slack --label ready_for_dev  # Slack read + single label
+./looper.sh --read-slack             # read Slack → task summary → /slack-report (standalone)
+./looper.sh --read-slack --channel "#medusa" --since "09:00" --before "10:02" --counter 2
+./looper.sh --brainstorm-prd         # brainstorm tasks file → create GitHub issues (standalone)
+./looper.sh --read-slack --brainstorm-prd --channel "#medusa" --since "09:00" --before "10:02"
 ```
 
 ### Via `/loop` (Claude Code built-in — repeats on interval)
@@ -233,8 +234,8 @@ Saves ~60–70% tokens vs running everything on Opus.
 | `setup-labels.sh` | Create all pipeline labels on GitHub (run once) |
 | `looper-profiles.sh` | Custom scheduling profiles |
 | `test-only.sh` | Run Claude `/test` command standalone |
-| `read-issue.sh` | `claude /slack-read` → `brainstorm-issue.sh` → GitHub issue |
-| `brainstorm-issue.sh` | `claude /brainstorm` → `claude /issue` → GitHub issue |
+| `read-issue.sh` | `claude /slack-read` → task summary → `claude /slack-report` |
+| `brainstorm-issue.sh` | `claude /brainstorm` → `claude /issue` → GitHub issue (AUTO-MODE) |
 | `report-issue.sh` | Post-fix/ship reporting via `claude /slack-report` (extracts log summary) |
 | `/issue` | Create pipeline-ready GitHub issue (interactive or from brainstorm) |
 | `/brainstorm` | Ideation → optionally creates issue via `/issue` |
@@ -248,16 +249,20 @@ Channel: `#medusa-agent-swarm`
 
 | Script | Purpose | Status |
 |--------|---------|--------|
-| `read-issue.sh` | `claude /slack-read` → `brainstorm-issue.sh` → GitHub issue | Active |
-| `brainstorm-issue.sh` | `claude /brainstorm` → `claude /issue` inline | Active |
+| `read-issue.sh` | `claude /slack-read` → task summary → `/slack-report` | Active |
+| `brainstorm-issue.sh` | `claude /brainstorm` → `claude /issue` (AUTO-MODE) | Active |
 | `report-issue.sh` | Post-fix/ship reporting via `claude /slack-report` + log extraction | Active |
 | `/uncle-report` | Daily summary for Thierry on log channel | Active |
 
 ### Full Loop
 
 ```
-read-issue.sh (claude /slack-read → brainstorm-issue.sh) → looper.sh → fix/ship → report-issue.sh → Slack
+Step 1: looper.sh --read-slack   → read-issue.sh (claude /slack-read → tasks file → /slack-report)
+Step 2: looper.sh --brainstorm-prd → brainstorm-issue.sh per task (/brainstorm → /issue → GitHub issue)
+Step 3: looper.sh                → fix/ship pipeline → report-issue.sh → Slack
 ```
+
+Each step is standalone — `--read-slack` and `--brainstorm-prd` stop before label scan.
 
 All scripts use the inline Claude skill pattern: `claude -p "/skill-name <context>"`.
 Credentials managed by each skill's `.env`.
