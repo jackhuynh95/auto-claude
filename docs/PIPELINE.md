@@ -116,6 +116,8 @@ done
 ./looper.sh --dry-run                # preview — shows what would run
 ./looper.sh --label ready_for_dev    # single label only
 ./looper.sh --label "ready_for_dev,ready_for_test"  # multiple labels
+./looper.sh --issues "154,153"       # explicit issue list — full pipeline per issue, in order
+./looper.sh --sort oldest            # sort label scans by oldest first (default: newest)
 ./looper.sh --limit 3                # cap at 3 issues
 ./looper.sh --read-slack             # read Slack → task summary → /slack-report (standalone)
 ./looper.sh --read-slack --channel "#medusa" --since "09:00" --before "10:02" --counter 2

@@ -52,7 +52,9 @@ gh issue edit 42 --add-label "pipeline" --add-label "ready_for_dev"  # manual
 
 # 3. Run
 ./looper.sh --dry-run                    # preview
-./looper.sh                              # process
+./looper.sh                              # process all labels
+./looper.sh --issues "154,153"           # explicit order, full pipeline per issue
+./looper.sh --sort oldest               # oldest issues first
 /loop 2h ./looper.sh --profile overnight # automated
 ```
 

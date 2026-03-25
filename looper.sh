@@ -18,6 +18,8 @@
 #   ./looper.sh --dry-run                # scan only
 #   ./looper.sh --limit 3               # cap per run
 #   ./looper.sh --profile overnight      # scheduling profile
+#   ./looper.sh --issues "154,153"        # explicit issue list, processed in given order
+#   ./looper.sh --sort oldest             # sort by oldest first (default: newest)
 #   ./looper.sh --read-slack             # read-issue.sh → brainstorm → issue before pipeline
 #   ./looper.sh --read-slack --channel "#medusa"  # read specific channel
 #   ./looper.sh --read-slack --label ready_for_dev  # Slack + single label
@@ -47,6 +49,8 @@ SLACK_SINCE=""          # --since: time filter for read-issue.sh
 SLACK_BEFORE=""         # --before: time filter for read-issue.sh
 SLACK_COUNTER=""        # --counter: exact task count for read-issue.sh
 BRAINSTORM_PRD=""       # --brainstorm-prd: brainstorm tasks into GitHub issues
+ISSUE_LIST=""           # --issues: explicit issue numbers in order (e.g., "154,153")
+SORT_ORDER="newest"     # --sort: newest (default) or oldest
 
 # Run results tracking
 TOTAL_PROCESSED=0
@@ -91,6 +95,12 @@ for i in "${!ARGS[@]}"; do
             SLACK_COUNTER="${ARGS[$((i+1))]:-}"
             ;;
         --brainstorm-prd) BRAINSTORM_PRD="true" ;;
+        --issues)
+            ISSUE_LIST="${ARGS[$((i+1))]:-}"
+            ;;
+        --sort)
+            SORT_ORDER="${ARGS[$((i+1))]:-newest}"
+            ;;
     esac
 done
 
@@ -453,6 +463,142 @@ build_flag_summary() {
 # Issue Processing
 # ------------------------------------------------------------------------------
 
+# ------------------------------------------------------------------------------
+# Explicit Issue List Processing (--issues "154,153")
+# Processes issues in the exact order specified, regardless of labels
+# ------------------------------------------------------------------------------
+
+process_explicit_issues() {
+    local flags="$1"
+
+    IFS=',' read -ra NUMS <<< "$ISSUE_LIST"
+    info "Processing ${#NUMS[@]} explicit issue(s) through full pipeline: ${ISSUE_LIST}"
+
+    for num in "${NUMS[@]}"; do
+        num=$(echo "$num" | tr -d ' ')  # trim whitespace
+        [[ -z "$num" ]] && continue
+
+        # Fetch issue details
+        local issue=$(gh issue view "$num" --json number,title,labels,state 2>/dev/null || echo "{}")
+        local title=$(echo "$issue" | jq -r '.title // "unknown"')
+        local state=$(echo "$issue" | jq -r '.state // "unknown"')
+        local labels_json=$(echo "$issue" | jq '.labels // []')
+
+        if [[ "$title" == "unknown" ]] || [[ "$state" != "OPEN" ]]; then
+            warn "Skipping #$num: not found or not open (state: $state)"
+            TOTAL_SKIPPED=$(( TOTAL_SKIPPED + 1 ))
+            continue
+        fi
+
+        local issue_type=$(get_issue_type "$title")
+        local script=$(get_script_for_type "$issue_type")
+
+        if [[ -z "$script" ]]; then
+            warn "Skipping #$num: $title (WONTFIX/WONTFEAT)"
+            TOTAL_SKIPPED=$(( TOTAL_SKIPPED + 1 ))
+            continue
+        fi
+
+        local issue_flags=$(build_issue_flags "$flags" "$title" "$labels_json")
+        local flag_summary=$(build_flag_summary "$title" "$labels_json")
+        local issue_start=$(date +%s)
+
+        info "══════════════════════════════════════"
+        info "#$num full pipeline: $title"
+        info "══════════════════════════════════════"
+
+        if [[ "$DRY_RUN" == "true" ]]; then
+            info "[DRY RUN] Would run full pipeline for #$num:"
+            info "  1. $script $num $issue_flags"
+            info "  2. verify-issue.sh $num --auto --model sonnet"
+            info "  3. merge PR + close issue"
+            TOTAL_PROCESSED=$(( TOTAL_PROCESSED + 1 ))
+            continue
+        fi
+
+        # ── Stage 1: Fix/Ship (ready_for_dev → ready_for_test) ──
+        info "[Stage 1/3] $script #$num ($issue_type ${flag_summary})"
+        cd "$PROJECT_ROOT"
+        git checkout main 2>/dev/null || true
+        git pull --ff-only 2>/dev/null || true
+
+        if ! bash "${SCRIPT_DIR}/${script}" "$num" $issue_flags 2>&1 | tee -a "$LOG_FILE"; then
+            local issue_end=$(date +%s)
+            warn "#$num fix/ship failed ($(( issue_end - issue_start ))s) — skipping to next issue"
+            TOTAL_FAILED=$(( TOTAL_FAILED + 1 ))
+            TOTAL_PROCESSED=$(( TOTAL_PROCESSED + 1 ))
+            cd "$PROJECT_ROOT"
+            git checkout main 2>/dev/null || true
+            git pull --ff-only 2>/dev/null || true
+            continue
+        fi
+
+        success "#$num fix/ship complete"
+        report_issue "$num"
+
+        # ── Stage 2: Verify (ready_for_test → verified) ──
+        cd "$PROJECT_ROOT"
+        git checkout main 2>/dev/null || true
+        git pull --ff-only 2>/dev/null || true
+
+        if [[ -f "${SCRIPT_DIR}/verify-issue.sh" ]]; then
+            info "[Stage 2/3] verify-issue.sh #$num"
+            if bash "${SCRIPT_DIR}/verify-issue.sh" "$num" --auto --model sonnet 2>&1 | tee -a "$LOG_FILE"; then
+                success "#$num verified"
+            else
+                warn "#$num verification failed — stopping pipeline for this issue"
+                TOTAL_FAILED=$(( TOTAL_FAILED + 1 ))
+                TOTAL_PROCESSED=$(( TOTAL_PROCESSED + 1 ))
+                cd "$PROJECT_ROOT"
+                git checkout main 2>/dev/null || true
+                git pull --ff-only 2>/dev/null || true
+                continue
+            fi
+        else
+            info "[Stage 2/3] verify-issue.sh not found — skipping verification"
+        fi
+
+        # ── Stage 3: Merge PR + Close (verified → closed) ──
+        cd "$PROJECT_ROOT"
+        git checkout main 2>/dev/null || true
+        git pull --ff-only 2>/dev/null || true
+
+        info "[Stage 3/3] Merge PR + close #$num"
+        local pr_num=$(gh pr list --state open --json number,title,body \
+            --jq ".[] | select(.body | contains(\"#${num}\")) | .number" 2>/dev/null | head -1)
+
+        if [[ -n "$pr_num" ]]; then
+            if gh pr merge "$pr_num" --squash --delete-branch 2>/dev/null; then
+                success "PR #$pr_num merged (squash) — #$num auto-closed"
+            elif gh pr merge "$pr_num" --squash --auto --delete-branch 2>/dev/null; then
+                success "PR #$pr_num auto-merge enabled — will merge when checks pass"
+            else
+                warn "PR #$pr_num merge failed — needs manual merge"
+            fi
+        else
+            gh issue close "$num" 2>/dev/null || warn "Failed to close #$num"
+            success "Closed #$num (no PR found)"
+        fi
+
+        report_issue "$num"
+
+        local issue_end=$(date +%s)
+        success "#$num full pipeline complete ($(( issue_end - issue_start ))s)"
+        TOTAL_SUCCEEDED=$(( TOTAL_SUCCEEDED + 1 ))
+        TOTAL_PROCESSED=$(( TOTAL_PROCESSED + 1 ))
+
+        # Reset to latest main before next issue
+        cd "$PROJECT_ROOT"
+        git checkout main 2>/dev/null || true
+        git pull --ff-only 2>/dev/null || true
+
+        if [[ $TOTAL_PROCESSED -ge $LIMIT ]]; then
+            info "Reached limit ($LIMIT) — stopping"
+            break
+        fi
+    done
+}
+
 process_issues_by_label() {
     local label="$1"
     local flags="$2"
@@ -460,8 +606,13 @@ process_issues_by_label() {
 
     info "Scanning issues with label: $label"
 
-    # Fetch issues with labels for routing
-    local issues=$(gh issue list --label "$label" --label "pipeline" --state open --json number,title,labels --limit "$((LIMIT * 2))" 2>/dev/null || echo "[]")
+    # Fetch issues with labels for routing (--sort controls order)
+    local sort_flag=""
+    case "$SORT_ORDER" in
+        oldest) sort_flag="--sort created --order asc" ;;
+        *)      sort_flag="--sort created --order desc" ;;  # newest (default)
+    esac
+    local issues=$(gh issue list --label "$label" --label "pipeline" --state open --json number,title,labels --limit "$((LIMIT * 2))" $sort_flag 2>/dev/null || echo "[]")
 
     # Filter out WONTFIX/WONTFEAT and separate bugs vs features
     local bugs=$(echo "$issues" | jq '[.[] | select(.title | ascii_upcase | contains("[BUG]"))]')
@@ -526,9 +677,10 @@ process_issues_by_label() {
                 TOTAL_FAILED=$(( TOTAL_FAILED + 1 ))
             fi
 
-            # Safety: always return to main between issues
+            # Reset to latest main before next issue
             cd "$PROJECT_ROOT"
             git checkout main 2>/dev/null || true
+            git pull --ff-only 2>/dev/null || true
         fi
 
         TOTAL_PROCESSED=$(( TOTAL_PROCESSED + 1 ))
@@ -587,6 +739,7 @@ route_by_label() {
 
                         cd "$PROJECT_ROOT"
                         git checkout main 2>/dev/null || true
+                        git pull --ff-only 2>/dev/null || true
                     fi
 
                     TOTAL_PROCESSED=$(( TOTAL_PROCESSED + 1 ))
@@ -652,7 +805,9 @@ main() {
     info "Looper Pipeline Scanner"
     info "Time: $(date '+%Y-%m-%d %H:%M:%S')"
     [[ -n "$PROFILE" ]] && info "Profile: $PROFILE"
+    [[ -n "$ISSUE_LIST" ]] && info "Issue list: $ISSUE_LIST"
     [[ -n "$FILTER_LABEL" ]] && info "Label filter: $FILTER_LABEL"
+    [[ "$SORT_ORDER" != "newest" ]] && info "Sort: $SORT_ORDER"
     [[ "$DRY_RUN" == "true" ]] && info "Mode: DRY RUN"
     info "Limit: $LIMIT issues per label"
     info "=========================================="
@@ -685,8 +840,12 @@ main() {
         return
     fi
 
-    # Route based on filter or scan all pipeline labels
-    if [[ -n "$FILTER_LABEL" ]]; then
+    # Route: explicit issues → label filter → scan all
+    if [[ -n "$ISSUE_LIST" ]]; then
+        # Explicit issue list — process in exact order given
+        local extra_flags="${PROFILE_FLAGS:-}"
+        process_explicit_issues "--auto $extra_flags"
+    elif [[ -n "$FILTER_LABEL" ]]; then
         # Handle comma-separated labels
         IFS=',' read -ra LABELS <<< "$FILTER_LABEL"
         for label in "${LABELS[@]}"; do
